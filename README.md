@@ -4,7 +4,7 @@ Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platf
 
 
 ![Switchberry board Front view](https://github.com/Time-Appliances-Project/Switchberry/blob/main/Images/Enclosed_FrontView.jpg)
-![Switchberry board Rear view](https://github.com/Time-Appliances-Project/Products/raw/main/Switchberry/Images/Enclosed_RearView.jpg)
+![Switchberry board Rear view](https://github.com/Time-Appliances-Project/Switchberry/blob/main/Images/Enclosed_RearView.jpg)
 
 ---
 
