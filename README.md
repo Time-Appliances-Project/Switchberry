@@ -8,6 +8,12 @@ Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platf
 
 ---
 
+## Order
+
+Coming soon!!!
+
+---
+
 ## Key Features
 
 - **5× front-panel RJ45** ports driven by a **KSZ9567** switch
