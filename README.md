@@ -3,7 +3,7 @@
 Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platform built around a **Microchip KSZ9567** and a **Renesas 8A34004 ClockMatrix DPLL**. It’s designed for **PTP / SyncE / timing lab** workflows while staying flexible enough to run as a compact managed switch/router with precise timing I/O.
 
 
-![Switchberry board Front view](https://github.com/Time-Appliances-Project/Products/raw/main/Switchberry/Images/Enclosed_FrontView.jpg)
+![Switchberry board Front view]([https://github.com/Time-Appliances-Project/Products/raw/main/Switchberry/Images/Enclosed_FrontView.jpg](https://github.com/Time-Appliances-Project/Switchberry/blob/main/Images/Enclosed_FrontView.jpg?raw=true))
 ![Switchberry board Rear view](https://github.com/Time-Appliances-Project/Products/raw/main/Switchberry/Images/Enclosed_RearView.jpg)
 
 ---
