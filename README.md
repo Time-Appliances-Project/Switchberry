@@ -1,6 +1,6 @@
 # Switchberry
 
-## Raspberry Pi CM4 Managed 1G Ethernet Switch with PTP Support
+## Raspberry Pi Compute Module based, Managed 1G Ethernet Switch with PTP Support
 Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platform built around a **Microchip KSZ9567** and a **Renesas 8A34004 ClockMatrix DPLL**. It’s designed for **PTP / SyncE / timing lab** workflows while staying flexible enough to run as a compact managed switch/router with precise timing I/O.
 
 <img width="999" height="657" alt="529070621-42df475b-2fe9-462f-92c0-70f97fde4533" src="https://github.com/user-attachments/assets/a4ab64b3-9412-491a-b70a-377372f48dde" />
