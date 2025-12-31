@@ -106,7 +106,7 @@ git clone https://github.com/Time-Appliances-Project/Switchberry
 cd Switchberry 
 ```
 
-### 2) Clone kernel sources**
+### 2) Clone kernel sources
 Instructions for building CM4 kernel are here: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
 
 ```bash 
@@ -148,9 +148,17 @@ sudo cp arch/arm64/boot/dts/overlays/README /boot/firmware/overlays/
 reboot
 ```
 
+
 ### 5) Install third party dependencies
 
-MDIO-tools is useful
+#### spidev-test
+
+```bash
+cd ~/kernel/linux/tools/spi
+make clean; make all; sudo make install
+```
+
+#### MDIO-tools
 
 ```bash
 cd ~/
