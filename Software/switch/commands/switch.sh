@@ -4,6 +4,63 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../ksz9567_spi.sh"
 
 
+blink_front_panel() {
+  # Usage:
+  #   blink_front_panel [count] [delay_seconds]
+  local count="${1:-3}"
+  local delay="${2:-0.2}"
+
+  # Simple sanity
+  if ! [[ "$count" =~ ^[0-9]+$ ]] || (( count <= 0 )); then
+    echo "blink_front_panel: count must be a positive integer" >&2
+    return 2
+  fi
+  if ! [[ "$delay" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "blink_front_panel: delay must be a non-negative number (seconds)" >&2
+    return 2
+  fi
+
+  _blink_cleanup() {
+    # back to default, HW LEDs
+    ksz9567_spi_write32 0x120 0x0
+  }
+
+  _blink_abort_int() {
+    _blink_cleanup
+    trap - INT TERM EXIT
+    kill -s INT "$$"   # propagate Ctrl-C so the script actually stops
+  }
+
+  _blink_abort_term() {
+    _blink_cleanup
+    trap - INT TERM EXIT
+    kill -s TERM "$$"  # propagate termination
+  }
+
+  # Always restore HW LEDs on normal exit/return
+  trap _blink_cleanup EXIT
+  # But on Ctrl-C / TERM: restore, then *stop*
+  trap _blink_abort_int INT
+  trap _blink_abort_term TERM
+
+  # user control LEDs
+  ksz9567_spi_write32 0x120 0x3ff
+
+  local i
+  for ((i=0; i<count; i++)); do
+    # all leds on
+    ksz9567_spi_write32 0x124 0x0
+    sleep "$delay"
+    # all leds off
+    ksz9567_spi_write32 0x124 0x3ff
+    sleep "$delay"
+  done
+
+  _blink_cleanup
+  trap - INT TERM EXIT
+}
+
+
 synce_recover() {
     local port="$1"
     local logical
@@ -572,6 +629,7 @@ handle_switch_command() {
         echo "  init        - Initialize the switch (global config, reset, etc)"
 	echo "   alu_debug  - Print ALU information"
 	echo "  synce-recover <1-5>   - Select front-panel port for SyncE recovery (placeholder)"
+	echo "  blink <number of blinks> <time between blinks>   - Blinks front panel LEDs"
         return 1
     fi
 
@@ -579,6 +637,7 @@ handle_switch_command() {
         init) switch_init ;;
 	alu_debug) alu_debug ;;
 	synce-recover) synce_recover "$@" ;;
+	blink) blink_front_panel "$@" ;; 
         *)
             echo "Unknown switch subcommand: $cmd"
             echo "Try: $0 switch"
