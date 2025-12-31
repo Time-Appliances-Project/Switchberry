@@ -1,0 +1,15 @@
+# /etc/systemd/system/switchberry-synce-init.service
+[Unit]
+Description=Switchberry SyncE initialization
+After=switchberry-full-init.service
+Wants=switchberry-full-init.service
+Requires=switchberry-full-init.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/synce_init.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

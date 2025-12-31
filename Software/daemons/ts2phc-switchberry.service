@@ -1,0 +1,15 @@
+# /lib/systemd/system/ts2phc-switchberry.service
+[Unit]
+Description=TS2PHC PHC disciplining for Switchberry (GM)
+After=switchberry-dpll-monitor.service
+Wants=switchberry-dpll-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/ts2phc_dpll_guard.sh
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
+

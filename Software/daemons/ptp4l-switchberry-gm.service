@@ -1,0 +1,24 @@
+# /lib/systemd/system/ptp4l-switchberry-gm.service
+[Unit]
+Description=PTP4L Grandmaster for Switchberry (guarded by DPLL + ts2phc convergence)
+After=ts2phc-switchberry.service switchberry-dpll-monitor.service
+Wants=ts2phc-switchberry.service switchberry-dpll-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/ptp4l_gm_guard.sh
+Restart=always
+RestartSec=1
+
+# Default behavior: STOP ptp4l during DPLL intervention
+Environment=PTP4L_NOT_OK_ACTION=stop
+
+# Optional knobs (uncomment if desired):
+# Environment=PTP4L_NOT_OK_ACTION=degrade
+# Environment=PTP4L_ALLOW_HOLDOVER=1
+# Environment=TS2PHC_OK_HOLD_SEC=5
+# Environment=POLL_SEC=0.2
+
+[Install]
+WantedBy=multi-user.target
+

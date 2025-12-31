@@ -1,0 +1,18 @@
+# /etc/systemd/system/switchberry-apply-timing.service
+[Unit]
+Description=Switchberry apply ClockMatrix timing configuration at boot
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+
+# Apply the board mux + 8A34004 runtime config
+ExecStart=/usr/bin/python3 /usr/local/sbin/apply_timing.py -c /etc/startup-dpll.json
+
+# Keep service "active" after it runs successfully (useful for dependencies)
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

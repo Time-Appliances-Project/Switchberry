@@ -1,0 +1,15 @@
+[Unit]
+Description=Switchberry full board initialization
+After=network.target switchberry-apply-timing.service
+Wants=network.target switchberry-apply-timing.service
+Requires=switchberry-apply-timing.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/usr/local/lib/switchberry/kszswitch-init
+ExecStart=/usr/bin/env bash ./full_init.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+
