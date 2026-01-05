@@ -97,16 +97,42 @@ To access the Switchberry, you can use
 
 1. Micro-HDMI for monitor, USB-A for keyboard
 2. Micro-USB on side. This will come up as UART to the CM4.
-	To access this with a fresh SD card, you'll need to copy cmdline.txt and config.txt into the SD card to enable the UART.
+	To access this with a fresh SD card, you'll need to edit config.txt into the SD card to enable the UART.
 
-### 1) Clone the github software
+In config.txt, add these at the end under [all]:
+
+```bash
+dtparam=spi=on
+enable_uart=1
+uart_2ndstage=1
+dtoverlay=disable-bt
+dtoverlay=switchberrytc
+#dtoverlay=ksz9567
+dtoverlay=spi0-1cs
+dtoverlay=uart5,txd5_pin=12,rxd5_pin=13
+dtoverlay=pcie-32bit-dma
+dtparam=i2c_vc=off
+hdmi_force_hotplug=1
+```
+
+### 1) Setup SD-card
+Edit config.txt in bootfs of SD card like above. Enables UART and boot without monitor.
+
+### 2) Clone the github software
 ```bash
 cd ~/
 git clone https://github.com/Time-Appliances-Project/Switchberry
 cd Switchberry 
 ```
 
-### 2) Clone kernel sources
+### 3) Install a bunch of dependencies
+
+```bash
+sudo apt update
+sudo apt install bc bison flex libssl-dev make screen vim
+```
+
+### 4) Clone kernel sources
 Instructions for building CM4 kernel are here: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
 
 ```bash 
@@ -116,25 +142,26 @@ cd kernel
 git clone --depth=1 https://github.com/raspberrypi/linux
 cd linux
 # updated .config with additional items needed by switchberry like MDIO and others 
-cp ~/Switchberry/kernel/.config ./.config
-# device tree overlays for switchberry, for both default ("Transparent clock") and DSA ("Boundary clock")
-cp ~/Switchberry/kernel/ksz9567-overlay.dts arch/arm/boot/dts/overlays/
-cp ~/Switchberry/kernel/switchberrytc-overlay.dts arch/arm/boot/dts/overlays/
-# config.txt and cmdline.txt to enable uart and other peripherals used by switchberry 
-sudo cp ~/Switchberry/kernel/config.txt /boot/firmware/
-sudo cp ~/Switchberry/kernel/cmdline.txt /boot/firmware/
+cp ~/Switchberry/Software/kernel/.config ./.config
+# device tree overlays for switchberry, for both default ("Transparent clock") and DSA ("Boundary clock"), and Makefile
+cp ~/Switchberry/Software/kernel/ksz9567-overlay.dts arch/arm/boot/dts/overlays/
+cp ~/Switchberry/Software/kernel/switchberrytc-overlay.dts arch/arm/boot/dts/overlays/
+cp ~/Switchberry/Software/kernel/Makefile arch/arm/boot/dts/overlays/
 ```
 
-### 3) Rebuild kernel with updated config and overlays
+### 5) Rebuild kernel with updated config and overlays
 
 This step will take significant time!
 ```bash 
 cd ~/kernel/linux
 KERNEL=kernel8
 
-# THIS STEP ESPECIALLY takes a long time 
+# THIS STEP ESPECIALLY takes a long time , I run it in screen so if you disconnect it keeps going
+#screen -S test # do this if you're familiar with screen so ssh connection can drop 
+# if it asks questions, just hold enter for defaults
 make -j6 Image.gz modules dtbs ; sudo make -j6 modules_install
 
+KERNEL=kernel8
 sudo cp /boot/firmware/$KERNEL.img /boot/firmware/$KERNEL-backup.img
 sudo cp arch/arm64/boot/Image.gz /boot/firmware/$KERNEL.img
 sudo cp arch/arm64/boot/dts/broadcom/*.dtb /boot/firmware/
@@ -142,14 +169,13 @@ sudo cp arch/arm64/boot/dts/overlays/*.dtb* /boot/firmware/overlays/
 sudo cp arch/arm64/boot/dts/overlays/README /boot/firmware/overlays/
 ```
 
-### 4) Reboot
+### 6) Reboot
 
 ```bash
 reboot
 ```
 
-
-### 5) Install third party dependencies
+### 7) Install third party dependencies
 
 #### spidev-test
 
@@ -168,7 +194,7 @@ KDIR=~/kernel/linux/
 make all; sudo make install 
 ```
 
-### 6) Install everything for Switchberry
+### 8) Install everything for Switchberry
 
 ```bash
 cd ~/Switchberry/Software/
@@ -176,13 +202,15 @@ chmod +x install_all.sh
 sudo ./install_all.sh
 ```
 
-### 7) Customize 
+### 9) Customize 
 
 Follow quick-start guide above at this point, everything should be installed!
 
 You need to create a /etc/startup-dpll.json for everything to get configured and operate properly.
 
+### 10) ONLY IF NECESSARY, flash DPLL EEPROM
 
+dplltool --flash-hex SwitchberryV6_8a34004_eeprom.hex
 
 
 
