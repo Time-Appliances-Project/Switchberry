@@ -39,6 +39,7 @@ The system is intended to start in this order:
      - `ptp4l-switchberry-gm.service` — runs ptp4l as a GM
    - **Client:**
      - `ptp4l-switchberry-client.service` — runs ptp4l as a client (often unicast; user supplies GM IP in config)
+	 - `switchberry-cm4-pps-monitor.service` — ensures PPS output from CM4 only when ptp4l is running and locked
 
 ---
 

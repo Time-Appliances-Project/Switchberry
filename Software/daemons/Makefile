@@ -32,12 +32,15 @@ SERVICE_FILES := \
     ts2phc-switchberry.service \
     ptp4l-switchberry-gm.service \
     ptp4l-switchberry-client.service \
+    switchberry-cm4-pps-monitor.service \
     gpspipe-socat.service
 
 # Helper scripts in this directory that should go into /usr/local/sbin
 SCRIPT_FILES := \
-    wait_for_dpll_lock.sh \
-    wait_for_ts2phc.sh \
+    ptp4l_dpll_quality_guard.sh \
+    ts2phc_dpll_guard.sh \
+    ptp4l_gm_guard.sh \
+    switchberry_cm4_pps_monitor.sh \
     switchberry-ptp-role.sh
 
 # Timing/PTP config files that should go into /etc/switchberry
