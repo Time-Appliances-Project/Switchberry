@@ -461,11 +461,11 @@ def run_wizard(path: str) -> None:
             print("GPS priority applies to:")
             print("  - Time domain (channels 5 & 6) always, if GPS is TIME_*")
             print("  - Frequency domain (channel 2) as well, if GPS is TIME_AND_FREQ.")
-            pr = input("GPS priority (1 = highest) [1]: ").strip() or "1"
+            pr = input("GPS priority (0 = highest) [0]: ").strip() or "0"
             try:
                 gps_priority = int(pr)
             except ValueError:
-                gps_priority = 1
+                gps_priority = 0
     gps_cfg = GpsConfig(present=gps_present, role=gps_role, priority=gps_priority)
 
     # Step 3: CM4 as time source (client/none)
@@ -479,7 +479,7 @@ def run_wizard(path: str) -> None:
             r = role_default
         print("CM4 priority applies to:")
         print("  - Time domain only (unless you pick TIME_AND_FREQ).")
-        pr = input("CM4 PPS priority (1 = highest) [2]: ").strip() or "2"
+        pr = input("CM4 PPS priority (0 = highest) [1]: ").strip() or "1"
         try:
             cm4_prio = int(pr)
         except ValueError:
@@ -501,7 +501,7 @@ def run_wizard(path: str) -> None:
     print("\nStep 4: SyncE as frequency-only source")
     ans = input("Use SyncE as a frequency-only source (FREQ_ONLY)? (y/N): ").strip().lower()
     if ans == "y":
-        pr = input("SyncE frequency priority (1 = highest) [2]: ").strip() or "2"
+        pr = input("SyncE frequency priority (0 = highest) [1]: ").strip() or "1"
         try:
             synce_prio = int(pr)
         except ValueError:
@@ -560,7 +560,7 @@ def run_wizard(path: str) -> None:
             if r not in ("TIME_ONLY", "FREQ_ONLY", "TIME_AND_FREQ"):
                 print("  Unknown role, defaulting to TIME_AND_FREQ.")
                 r = "TIME_AND_FREQ"
-            pr = input("  Priority (1 = highest) [3]: ").strip() or "3"
+            pr = input("  Priority (0 = highest) [2]: ").strip() or "2"
             try:
                 prio = int(pr)
             except ValueError:

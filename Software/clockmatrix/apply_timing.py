@@ -394,8 +394,8 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
         logical_idx, _ = src_to_input[src.name]  # logical 1..4
         phys_idx = logical_to_physical_input_idx(logical_idx)
 
-        # Plan uses 1-based priority (1 = highest); DPLL expects 0-based
-        prio_hw = src.priority - 1
+        # Plan uses 0-based priority (0 = highest); DPLL expects 0-based
+        prio_hw = src.priority
         if prio_hw < 0:
             prio_hw = 0
 
@@ -414,7 +414,7 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
         logical_idx, _ = src_to_input[src.name]
         phys_idx = logical_to_physical_input_idx(logical_idx)
 
-        prio_hw = src.priority - 1
+        prio_hw = src.priority 
         if prio_hw < 0:
             prio_hw = 0
 
