@@ -129,7 +129,7 @@ cd Switchberry
 
 ```bash
 sudo apt update
-sudo apt install bc bison flex libssl-dev make screen vim
+sudo apt install bc bison flex libssl-dev make screen vim automake autoconf libmnl-dev libmnl-doc gpsd gpsd-clients
 ```
 
 ### 4) Clone kernel sources
@@ -172,7 +172,7 @@ sudo cp arch/arm64/boot/dts/overlays/README /boot/firmware/overlays/
 ### 6) Reboot
 
 ```bash
-reboot
+sudo reboot
 ```
 
 ### 7) Install third party dependencies
@@ -184,7 +184,7 @@ cd ~/kernel/linux/tools/spi
 make clean; make all; sudo make install
 ```
 
-#### MDIO-tools
+#### mdio-tools
 
 ```bash
 cd ~/
@@ -192,9 +192,21 @@ git clone https://github.com/wkz/mdio-tools
 cd mdio-tools/kernel
 KDIR=~/kernel/linux/
 make all; sudo make install 
+cd .. 
+./autogen.sh
+./configure --prefix=/usr && make all && sudo make install
 ```
 
-### 8) Install everything for Switchberry
+#### testptp
+
+```bash
+cd ~/kernel/linux/tools/testing/selftests/ptp
+gcc -Wall -lrt testptp.c -o testptp
+sudo cp testptp /usr/bin/
+```
+
+
+### 8) Build & Install everything for Switchberry
 
 ```bash
 cd ~/Switchberry/Software/
@@ -207,10 +219,6 @@ sudo ./install_all.sh
 Follow quick-start guide above at this point, everything should be installed!
 
 You need to create a /etc/startup-dpll.json for everything to get configured and operate properly.
-
-### 10) ONLY IF NECESSARY, flash DPLL EEPROM
-
-dplltool --flash-hex SwitchberryV6_8a34004_eeprom.hex
 
 
 

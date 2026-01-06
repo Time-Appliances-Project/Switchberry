@@ -143,7 +143,7 @@ help:
 # Install
 # ---------------------------
 
-install: install-services install-scripts install-configs install-gpsd-config daemon-reload enable
+install: install-services install-scripts install-configs install-gpsd-config daemon-reload #enable
 	@echo "Install complete."
 
 install-services:

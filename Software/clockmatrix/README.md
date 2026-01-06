@@ -112,7 +112,7 @@ Also supported:
 
 - Flash an EEPROM image:
 ```bash
-./dplltool --flash-hex SwitchberryV5_8a34004_eeprom.hex
+./dplltool --flash-hex SwitchberryV6_8a34004_eeprom.hex
 ```
 
 - Apply a `.tcs` live config:
@@ -124,6 +124,8 @@ Also supported:
 ```bash
 ./dplltool --prog-file Test_FromScratch_Programming_11-26-2025.txt
 ```
+
+
 
 #### Monitor-friendly state/phase helpers
 
@@ -197,6 +199,8 @@ Notes:
 ./dplltool wr-freq-set-word <dpll_index> <word_s42>
 ./dplltool wr-freq-set-ppb <dpll_index> <ppb_float>
 ```
+
+
 
 #### `--set-out2-dest` note
 The CLI help mentions:

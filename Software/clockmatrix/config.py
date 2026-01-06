@@ -475,35 +475,32 @@ def run_wizard(path: str) -> None:
     gps_cfg = GpsConfig(present=gps_present, role=gps_role, priority=gps_priority)
 
     # Step 3: CM4 as time source (client/none)
-    print("\nStep 3: CM4 1PPS usage as a time source")
-    if role_str in ("CLIENT", "NONE"):
-        ans = input("Use CM4 1PPS as a time reference for the DPLL? (y/N): ").strip().lower()
-        if ans == "y":
-            print("CM4 PPS will typically be TIME_ONLY (phase/time), not a freq reference.")
-            role_default = TimeFreqRole.TIME_ONLY.value
-            r = input(f"Role for CM4 PPS (TIME_ONLY/TIME_AND_FREQ) [{role_default}]: ").strip().upper() or role_default
-            if r not in ("TIME_ONLY", "TIME_AND_FREQ"):
-                r = role_default
-            print("CM4 priority applies to:")
-            print("  - Time domain only (unless you pick TIME_AND_FREQ).")
-            pr = input("CM4 PPS priority (1 = highest) [2]: ").strip() or "2"
-            try:
-                cm4_prio = int(pr)
-            except ValueError:
-                cm4_prio = 2
-            cm4_cfg = Cm4Config(
-                used_as_source=True,
-                role=r,
-                priority=cm4_prio,
-            )
-        else:
-            cm4_cfg = Cm4Config(used_as_source=False, role=None, priority=None)
+    print("\n")
+    if role_str in ("CLIENT"):
+        print("PTP Client operation, help define priority, should PTP be top priority? Or something else?")
+        print("CM4 PPS will typically be TIME_ONLY (phase/time), not a freq reference.")
+        role_default = TimeFreqRole.TIME_ONLY.value
+        r = input(f"Role for CM4 PPS (TIME_ONLY/TIME_AND_FREQ) [{role_default}]: ").strip().upper() or role_default
+        if r not in ("TIME_ONLY", "TIME_AND_FREQ"):
+            r = role_default
+        print("CM4 priority applies to:")
+        print("  - Time domain only (unless you pick TIME_AND_FREQ).")
+        pr = input("CM4 PPS priority (1 = highest) [2]: ").strip() or "2"
+        try:
+            cm4_prio = int(pr)
+        except ValueError:
+            cm4_prio = 2
+        cm4_cfg = Cm4Config(
+            used_as_source=True,
+            role=r,
+            priority=cm4_prio,
+        )
     else:
         # GM: CM4 is sink of PPS, not source
-        print("  CM4 is configured as PTP GM.")
-        print("  In this mode, CM4 PPS is disciplined by the DPLL,")
-        print("  and PPS from the DPLL (via the SMA1/CM4 path) is used as the input to CM4.")
-        print("  Therefore, CM4 is not configured here as a time reference *into* the DPLL.")
+        print("CM4 is configured as PTP GM or not doing PTP at all.")
+        print("In this mode, CM4 PPS is disciplined by the DPLL,")
+        print("and PPS from the DPLL (via the SMA1/CM4 path) is used as the input to CM4.")
+        print("Therefore, CM4 is not configured here as a time reference *into* the DPLL.")
         cm4_cfg = Cm4Config(used_as_source=False, role=None, priority=None)
 
     # Step 4: SyncE
