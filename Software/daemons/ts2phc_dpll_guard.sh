@@ -16,7 +16,8 @@ RESTART_BACKOFF_SEC="${RESTART_BACKOFF_SEC:-1}"
 CONVERGE_S2_COUNT="${CONVERGE_S2_COUNT:-5}"
 CONVERGE_OFFSET_NS="${CONVERGE_OFFSET_NS:-1000000}" # 1 ms default
 
-TS2PHC_CMD=(/usr/sbin/ts2phc -q -s nmea -c eth0 -f /etc/switchberry/ts2phc-switchberry.conf -m -l 7)
+TS2PHC_CMD_NMEA=(/usr/sbin/ts2phc -q -s nmea -c eth0 -f /etc/switchberry/ts2phc-switchberry.conf -m -l 7)
+TS2PHC_CMD_GENERIC=(/usr/sbin/ts2phc -q -s generic -c eth0 -f /etc/switchberry/ts2phc-switchberry.conf -m -l 7)
 
 # Drop noisy lines from stdout (still parsed internally)
 FILTER_RE='nmea sentence|nmea delay'
@@ -25,11 +26,18 @@ ts() { date +"%Y-%m-%d %H:%M:%S"; }
 iso() { date -Is; }
 log() { echo "[$(ts)] ts2phc-guard: $*"; }
 
+gps_ok() {
+  local lines
+  lines="$(gpspipe -r -x 2 2>/dev/null | wc -l)"
+  (( lines > 10 ))
+}
+
+
 write_status() {
   local file="$1" state="$2" msg="$3"
   local tmp="${file}.$$".tmp
   printf "%s\n%s\n%s\n" "$state" "$(iso)" "$msg" > "$tmp"
-  mv "$tmp" "$file"
+  mv -f "$tmp" "$file"
 }
 
 read_first_line() {
@@ -78,7 +86,24 @@ start_ts2phc() {
 
   # Start ts2phc in its own process group so we can kill it cleanly.
   # setsid makes PID == PGID for the launched process.
+
+
+  local -a TS2PHC_CMD
+
+  if gps_ok; then
+    TS2PHC_CMD=("${TS2PHC_CMD_NMEA[@]}")
+    log "GPS OK: starting ts2phc in NMEA mode: ${TS2PHC_CMD[*]}"
+  else
+    # copy system time to eth0 first
+    sudo phc_ctl eth0 "set;" adj 37
+    TS2PHC_CMD=("${TS2PHC_CMD_GENERIC[@]}")
+    log "GPS not OK: setting eth0 PHC from system time, then starting ts2phc in GENERIC mode: ${TS2PHC_CMD[*]}"
+  fi
+
+  # Start ts2phc detached, line-buffered into the fifo
   setsid bash -c 'exec stdbuf -oL -eL "$@"' _ "${TS2PHC_CMD[@]}" >"$fifo" 2>&1 &
+
+
   ts2phc_pgid=$!
   log "Started ts2phc (pgid=$ts2phc_pgid)"
 
