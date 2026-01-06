@@ -14,7 +14,7 @@ Wants=switchberry-dpll-monitor.service
 Type=simple
 
 # Your client config (edit the UDPv4 in the config file to point to your GM)
-ExecStart=/usr/sbin/ptp4l -f /etc/switchberry/ptp4l-switchberry-client.conf -m
+ExecStart=/usr/sbin/ptp4l -f /etc/switchberry/ptp4l-switchberry-client-uc.conf -m
 
 # Restart on failures / link hiccups
 Restart=always
