@@ -146,7 +146,7 @@ cp ~/Switchberry/Software/kernel/.config ./.config
 # device tree overlays for switchberry, for both default ("Transparent clock") and DSA ("Boundary clock"), and Makefile
 cp ~/Switchberry/Software/kernel/ksz9567-overlay.dts arch/arm/boot/dts/overlays/
 cp ~/Switchberry/Software/kernel/switchberrytc-overlay.dts arch/arm/boot/dts/overlays/
-cp ~/Switchberry/Software/kernel/Makefile arch/arm/boot/dts/overlays/
+cp ~/Switchberry/Software/kernel/copy_Makefile arch/arm/boot/dts/overlays/
 ```
 
 ### 5) Rebuild kernel with updated config and overlays
