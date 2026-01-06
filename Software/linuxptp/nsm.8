@@ -1,0 +1,155 @@
+.TH NSM 8 "March 2024" "linuxptp"
+.SH NAME
+nsm \- NetSync Monitor client
+
+.SH SYNOPSIS
+.B nsm
+[
+.BI \-f " config"
+] [
+.BI \-i " interface"
+] [
+.I long-options
+] [ command ] ...
+
+.SH DESCRIPTION
+.B nsm
+is a program which implements a NetSync Monitor (NSM) client. NSM is an
+extension to the Precision Time Protocol (PTP), which enables a client to
+measure the offset of its clock against any PTP clock in the network which
+supports NSM. It uses unicast messages, but unlike PTP in the unicast mode it
+does not require the server to keep any state specific to the client. It is
+particularly useful for monitoring.
+
+The program reads commands from the standard input or from the command line.
+
+.SH COMMANDS
+
+.TP
+.BI NSM " address"
+Send a NetSync Monitor request to the specified network address (IPv4 or MAC)
+and print the measured offset with the response.
+.TP
+.B help
+Display a help message.
+
+.SH OPTIONS
+
+.TP
+.BI \-f " config"
+Read configuration from the specified file. No configuration file is read by
+default.
+.TP
+.BI \-i " interface"
+Specify the network interface.
+.TP
+.B \-h
+Display a help message.
+.TP
+.B \-v
+Print the software version and exit.
+
+.SH LONG OPTIONS
+
+Each and every configuration file option (see below in sections
+.BR PROGRAM\ OPTIONS
+and
+.BR PORT\ OPTIONS )
+may also appear
+as a "long" style command line argument. For example, the transportSpecific
+option may be set using either of these two forms:
+
+.RS
+\f(CW\-\-transportSpecific 1   \-\-transportSpecific=1\fP
+.RE
+
+Option values given on the command line override values in the global
+section of the configuration file (which, in turn, overrides default
+values).
+
+.SH CONFIGURATION FILE
+
+The configuration file is divided into sections. Each section starts with a
+line containing its name enclosed in brackets and it follows with settings.
+Each setting is placed on a separate line, it contains the name of the
+option and the value separated by whitespace characters. Empty lines and lines
+starting with # are ignored.
+
+The global section (indicated as
+.BR [global] )
+sets the global program options as well as the default port specific options.
+Other sections are port specific sections and they override the default port
+options. The name of the section is the name of the configured port (e.g.
+.BR [eth0]
+).
+
+.SH PORT OPTIONS
+.TP
+.B active_key_id
+Used in conjunction with \fBspp\fR and \fBsa_file\fR directives to
+specify which key from the \fBspp\fR defined Security Association
+should be used for outbound icv calculations. All Security Assocations
+are read from the file specified by \fBsa_file\fR. Requires \fBspp\fR
+and \fBsa_file\fR directives. Must be in the range of 1 to 2^32-1,
+inclusive. The default is 0 (disabled).
+.TP
+.B delayAsymmetry
+The time difference in nanoseconds of the transmit and receive
+paths. This value should be positive when the master-to-slave
+propagation time is longer and negative when the slave-to-master time
+is longer. The default is 0 nanoseconds.
+.TP
+.B network_transport
+Select the network transport. Possible values are UDPv4 and L2. The default
+is UDPv4.
+.TP
+.B spp
+Specifies the Security Parameters Pointer of the desired Security
+Association to be used for Authentication TLV support for a given port.
+Any port with an assigned spp will attach Authentication TLVs to all
+outbound messages and check for Authentication TLVs on all inbound
+messages in accordance to the corresponding security association
+sourced via the \fBsa_file\fR directive. Outbound Authentication TLVs
+are generated using the key specified by \fBactive_key_id\fR. Not
+compatible with one step ports or advertised versions less then
+PTPv2.1. Requires \fBsa_file\fR and \fBactive_key_id\fR directives.
+Must be in the range of 0 to 255, inclusive.
+The default is -1 (disabled).
+.TP
+.B transportSpecific
+The transport specific field. Must be in the range 0 to 255.
+The default is 0.
+
+.SH PROGRAM OPTIONS
+
+.TP
+.B domainNumber
+The domain attribute of the local clock. The default is 0.
+.TP
+.B sa_file
+Specifies the location of the file containing Security Associations
+used for immediate security processing of the Authentication TLV in
+support of the optional security mechanism defined in ieee1588-2019
+ch 14.16. See \fBSECURITY ASSOCIATION OPTIONS\fR for information on how
+this file should be formatted. \fBspp\fR and \fBactive_key_id\fR should
+be specifed for each port to indicate which Security Association from
+the /fBsa_file/fR should be used. The default is an empty string.
+.TP
+.B time_stamping
+The time stamping method. The allowed values are hardware, software and legacy.
+The default is hardware.
+
+.SH WARNING
+
+Be cautious when the same configuration file is used for both ptp4l
+and nsm.  Keep in mind that values specified in the configuration file
+take precedence over their default values. If a certain option which
+is common to ptp4l and nsm is specified to a non-default value in the
+configuration file (e.g. for ptp4l), then this non-default value
+applies also for nsm. This might be not what is expected.
+
+To avoid securely these unexpected behaviour, different configuration files
+for ptp4l and nsm are recommended.
+
+.SH SEE ALSO
+.BR ptp4l (8)
