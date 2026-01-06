@@ -278,7 +278,7 @@ dpll_result_t dpll_burst_read(int spi_fd,
 #define EE_I2C_ADDR_BLOCK0 0x54  /* addresses 0x00000..0x0FFFF */
 #define EE_I2C_ADDR_BLOCK1 0x55  /* addresses 0x10000..0x1FFFF */
 
-#define EE_DELAY_WRITE_US  100000   /* 100ms for up-to-128-byte writes */
+#define EE_DELAY_WRITE_US  100000   /* 10ms for up-to-128-byte writes */
 #define EE_DELAY_READ_US   10000    /* 10ms for reads */
 
 /* ---- EEPROM helpers ---- */

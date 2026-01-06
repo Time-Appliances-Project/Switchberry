@@ -57,7 +57,7 @@ This will define how switchberry will operate, including SMA operations and PTP 
 
 ```bash
 cd ~/Switchberry/Software/clockmatrix
-cp dpll-config.json /etc/startup-dpll.json
+sudo cp dpll-config.json /etc/startup-dpll.json
 ```
 
 ### 4) Setup your ptp4l configuration (if using PTP)

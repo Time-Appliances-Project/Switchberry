@@ -20,7 +20,7 @@
       "direction": "INPUT",
       "role": "FREQ_ONLY",
       "priority": 0,
-      "frequency_hz": null
+      "frequency_hz": 10000000
     },
     {
       "name": "SMA2",
@@ -39,9 +39,9 @@
     {
       "name": "SMA4",
       "direction": "INPUT",
-      "role": "FREQ_ONLY",
-      "priority": 2,
-      "frequency_hz": null
+      "role": "TIME_ONLY",
+      "priority": 1,
+      "frequency_hz": 1
     }
   ]
 }

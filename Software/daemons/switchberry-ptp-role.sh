@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG=/etc/switchberry/dpll-config.json
+CONFIG=/etc/startup-dpll.json
 
 echo "[switchberry-ptp-role] Reading PTP role from ${CONFIG}"
 

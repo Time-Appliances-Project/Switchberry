@@ -55,7 +55,7 @@ class SmaConfig:
     direction: str                    # SmaDirection value
     role: Optional[str] = None        # TimeFreqRole (if INPUT)
     priority: Optional[int] = None    # priority (if INPUT)
-    frequency_hz: Optional[int] = None  # desired output frequency (if OUTPUT)
+    frequency_hz: Optional[int] = None  # desired output frequency (if OUTPUT), also used for input
 
 
 @dataclass
@@ -261,13 +261,7 @@ def derive_plan(cfg: TimingConfig) -> DerivedPlan:
 
     # d) SMA consistency checks + special SMA1 rules
     for sma in cfg.smas:
-        if sma.direction == SmaDirection.INPUT.value:
-            if sma.frequency_hz is not None:
-                warnings.append(
-                    f"{sma.name}: frequency_hz is set but direction is INPUT; "
-                    "frequency_hz is only used for OUTPUT."
-                )
-        elif sma.direction == SmaDirection.OUTPUT.value:
+        if sma.direction == SmaDirection.OUTPUT.value:
             # SMA1 special: shares path with CM4 PPS, only 1PPS, and not allowed when GM
             if sma.name == "SMA1":
                 if ptp_role == PtpRole.GM:
@@ -379,7 +373,7 @@ def validate_config(cfg: TimingConfig) -> DerivedPlan:
     print("\nSMA configuration:")
     for sma in cfg.smas:
         if sma.direction == SmaDirection.INPUT.value:
-            print(f"  {sma.name}: INPUT, role={sma.role}, priority={sma.priority}")
+            print(f"  {sma.name}: INPUT, role={sma.role}, priority={sma.priority}, frequency={sma.frequency_hz}")
         elif sma.direction == SmaDirection.OUTPUT.value:
             if sma.name == "SMA1":
                 print(f"  {sma.name}: OUTPUT, 1PPS (shares path with CM4 1PPS)")
