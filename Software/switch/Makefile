@@ -1,15 +1,11 @@
 # Makefile for installing Switchberry KSZ switch init bundle and service
 
 PREFIX             ?= /usr
-SYSTEMD_DIR        ?= $(PREFIX)/lib/systemd/system
 INSTALL_ROOT       ?= /usr/local/lib/switchberry
 INSTALL_DIR        ?= $(INSTALL_ROOT)/kszswitch-init
 SBIN_DIR           ?= /usr/local/sbin
 
 INSTALL            ?= install
-
-SERVICE_FILE       := switchberry-full-init.service
-SERVICE_NAME       := switchberry-full-init.service
 
 # All files in this directory that should be copied to the central location.
 INIT_FILES := \
@@ -25,13 +21,13 @@ INIT_DIRS := \
 .PHONY: all install install-files install-links uninstall daemon-reload enable disable
 
 all:
-	@echo "Nothing to build here. Use 'make install' to install init bundle and systemd service."
+	@echo "Nothing to build here. Use 'make install' to install init bundle "
 
-# Single entry point: copy files, create PATH links, reload systemd, enable service
+# Single entry point: copy files, create PATH links
 install: install-files install-links daemon-reload enable
 	@echo "Install complete."
 
-install-files: $(SERVICE_FILE) $(INIT_FILES)
+install-files: $(INIT_FILES)
 	@echo "Installing init bundle into $(DESTDIR)$(INSTALL_DIR)"
 	$(INSTALL) -d "$(DESTDIR)$(INSTALL_DIR)"
 
@@ -54,10 +50,6 @@ install-files: $(SERVICE_FILE) $(INIT_FILES)
 		fi; \
 	done
 
-	@echo "Installing systemd unit into $(DESTDIR)$(SYSTEMD_DIR)"
-	$(INSTALL) -d "$(DESTDIR)$(SYSTEMD_DIR)"
-	$(INSTALL) -m 0644 "$(SERVICE_FILE)" "$(DESTDIR)$(SYSTEMD_DIR)/$(SERVICE_NAME)"
-
 install-links:
 	@echo "Creating convenience symlinks in $(DESTDIR)$(SBIN_DIR)"
 	$(INSTALL) -d "$(DESTDIR)$(SBIN_DIR)"
@@ -67,9 +59,6 @@ install-links:
 	ln -sf "$(INSTALL_DIR)/switch_cli.sh" "$(DESTDIR)$(SBIN_DIR)/switch_cli.sh"
 
 uninstall:
-	@echo "Removing systemd unit from $(SYSTEMD_DIR)"
-	rm -f "$(SYSTEMD_DIR)/$(SERVICE_NAME)"
-
 	@echo "Removing init bundle from $(INSTALL_DIR)"
 	rm -rf "$(INSTALL_DIR)"
 
@@ -77,15 +66,4 @@ uninstall:
 	rm -f "$(SBIN_DIR)/full_init.sh"
 	rm -f "$(SBIN_DIR)/switch_cli.sh"
 
-daemon-reload:
-	@echo "Reloading systemd daemon"
-	sudo systemctl daemon-reload
-
-enable:
-	@echo "Enabling $(SERVICE_NAME)"
-	sudo systemctl enable "$(SERVICE_NAME)"
-
-disable:
-	@echo "Disabling $(SERVICE_NAME)"
-	sudo systemctl disable "$(SERVICE_NAME)" || true
 

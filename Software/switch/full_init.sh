@@ -3,8 +3,8 @@ set -euo pipefail
 
 
 
-gpioset gpiochip0 7=0
-gpioset gpiochip0 7=1
+gpioset -t 0 -c gpiochip0 7=0
+gpioset -t 0 -c gpiochip0 7=1
 sudo ./phy_init.sh
 sudo ./switch_cli.sh switch init
 

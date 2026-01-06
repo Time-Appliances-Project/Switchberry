@@ -143,36 +143,36 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
         # CM4 is GM: DPLL OUT2 should go TO CM4 1PPS input.
         # CM4 multiplexer, output 1, CM4_MUX_SEL[1:0] = 2'b00
         print("CM4 is PTP GM: route DPLL OUT2 -> CM4 1PPS input")
-        run(["gpioset", "gpiochip2", "10=0", "11=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "10=0", "11=0"], dry_run=dry_run)
         # Enable DPLL Q9P (1PPS) to go to CM4 (16=1, your note)
         print("Setup DPLL Q9P (1pps) to go to CM4")
-        run(["gpioset", "gpiochip2", "16=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "16=1"], dry_run=dry_run)
         # enable CLK0N to come from SMA2
         print(f"Setup CLK0N to potentially come from SMA2")
-        run(["gpioset", "gpiochip2", "14=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "14=0"], dry_run=dry_run)
     else:
         # CM4 is CLIENT or NONE: CM4 1PPS goes TO DPLL input 2.
         # CM4 multiplexer, output 2, CM4_MUX_SEL[1:0] = 2'b01
         print("CM4 is PTP CLIENT/NONE: route CM4 1PPS -> DPLL IN2")
-        run(["gpioset", "gpiochip2", "10=1", "11=0"], dry_run=dry_run)        
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "10=1", "11=0"], dry_run=dry_run)        
         # 14=1: enable CM4 PPS path towards DPLL IN2 (per your comment)
         print("Setup CLK0N to potentially come from CM4")
-        run(["gpioset", "gpiochip2", "14=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "14=1"], dry_run=dry_run)
         # enable Q9_P to go to SMA1 otherwise
         print("Setup Q9_P to potentially go to SMA1")
-        run(["gpioset", "gpiochip2", "16=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "16=0"], dry_run=dry_run)
 
     # ----------------------------------------------------------------------
     # 2. M.2 1PPS routing (always send to DPLL by default)
     # ----------------------------------------------------------------------
     print("Route M.2 1PPS to DPLL by default (output 1, M2_MUX_SEL=00)")
-    run(["gpioset", "gpiochip2", "6=0", "7=0"], dry_run=dry_run)
+    run(["gpioset", "-t", "0", "-c", "gpiochip2", "6=0", "7=0"], dry_run=dry_run)
     
     print("Route DPLL Q10P to SMA2 by default")
-    run(["gpioset", "gpiochip2", "17=0"], dry_run=dry_run)
+    run(["gpioset", "-t", "0", "-c", "gpiochip2", "17=0"], dry_run=dry_run)
 
     print("Route DPLL CLK1N to SMA4 by default")
-    run(["gpioset", "gpiochip2", "15=0"], dry_run=dry_run)
+    run(["gpioset", "-t", "0", "-c", "gpiochip2", "15=0"], dry_run=dry_run)
 
     # ----------------------------------------------------------------------
     # 3. SMA front-end muxes (first layer, at the SMAs)
@@ -198,47 +198,47 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
     if sma1_cfg.direction == "INPUT":
         # Route SMA1 -> DPLL IN1 , output 3 , SMA1_MUX_SEL[1:0] = 2'b10
         print("SMA1 as INPUT: route SMA1 -> DPLL IN1")
-        run(["gpioset", "gpiochip2", "0=0", "1=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "0=0", "1=1"], dry_run=dry_run)
     elif sma1_cfg.direction == "OUTPUT":
         # Route DPLL OUT2 -> SMA1 , output 2, SMA1_MUX_SEL[1:0] = 2'b01
         print("SMA1 as OUTPUT: route DPLL OUT2 -> SMA1")
-        run(["gpioset", "gpiochip2", "0=1", "1=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "0=1", "1=0"], dry_run=dry_run)
     else:
         # UNUSED:
         # If GPS is present and configured, we can use the "third" state as GPS->SMA1 (11),
         # otherwise leave it floating (00).
         print("SMA1 UNUSED: floating/unused (SMA1_MUX_SEL=00)")
-        run(["gpioset", "gpiochip2", "0=0", "1=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "0=0", "1=0"], dry_run=dry_run)
 
     # --- SMA2 front-end mux ---
     sma2_cfg = next(s for s in cfg.smas if s.name == "SMA2")
     if sma2_cfg.direction == "INPUT":
         # SMA2 as input to DPLL IN2 , output 3, SMA2_MUX_SEL[1:0] = 2'b10
         print("SMA2 as INPUT: route SMA2 -> DPLL IN2")
-        run(["gpioset", "gpiochip2", "2=0", "3=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "2=0", "3=1"], dry_run=dry_run)
     elif sma2_cfg.direction == "OUTPUT":
         # DPLL OUT3 -> SMA2 , output 2, SMA2_MUX_SEL[1:0] = 2'b01
         print("SMA2 as OUTPUT: route DPLL OUT3 -> SMA2")
-        run(["gpioset", "gpiochip2", "2=1", "3=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "2=1", "3=0"], dry_run=dry_run)
     else:
         # UNUSED: route to unused / floating, output 1, SMA2_MUX_SEL[1:0] = 2'b00
         print("SMA2 UNUSED: floating/unused (SMA2_MUX_SEL=00)")
-        run(["gpioset", "gpiochip2", "2=0", "3=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "2=0", "3=0"], dry_run=dry_run)
 
     # --- SMA3 front-end mux ---
     sma3_cfg = next(s for s in cfg.smas if s.name == "SMA3")
     if sma3_cfg.direction == "INPUT":
         # SMA3 as input to DPLL IN3, output 3, SMA3_MUX_SEL[1:0] = 2'b10
         print("SMA3 as INPUT: route SMA3 -> DPLL IN3")
-        run(["gpioset", "gpiochip2", "4=0", "5=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "4=0", "5=1"], dry_run=dry_run)
     elif sma3_cfg.direction == "OUTPUT":
         # DPLL OUT4 -> SMA3, output 4, SMA3_MUX_SEL[1:0] = 2'b11
         print("SMA3 as OUTPUT: route DPLL OUT4 -> SMA3")
-        run(["gpioset", "gpiochip2", "4=1", "5=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "4=1", "5=1"], dry_run=dry_run)
     else:
         # UNUSED: floating, output 1, SMA3_MUX_SEL[1:0] = 2'b00
         print("SMA3 UNUSED: floating/unused (SMA3_MUX_SEL=00)")
-        run(["gpioset", "gpiochip2", "4=0", "5=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "4=0", "5=0"], dry_run=dry_run)
 
     # SMA4 has no mux; always input to DPLL IN4 → nothing to do front-end wise.
 
@@ -270,14 +270,14 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
 
     if use_synce:
         print("DPLL IN1 source: SyncE (board mux: SyncE -> DPLL IN1)")
-        run(["gpioset", "gpiochip2", "12=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "12=1"], dry_run=dry_run)
     elif use_sma1_input:
         print("DPLL IN1 source: SMA1 path (board mux: SMA1 -> DPLL IN1)")
-        run(["gpioset", "gpiochip2", "12=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "12=0"], dry_run=dry_run)
     else:
         # Default: if SyncE is physically always present, you may pick it.
         print("DPLL IN1 source: defaulting to SyncE (no SMA1 input selected)")
-        run(["gpioset", "gpiochip2", "12=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "12=1"], dry_run=dry_run)
 
     # --- DPLL IN2: SMA2 path vs CM4 1PPS ---
     use_cm4_src = cfg.cm4.used_as_source  # only true when CLIENT/NONE + user opted in
@@ -290,14 +290,14 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
 
     if use_cm4_src:
         print("DPLL IN2 source: CM4 1PPS (board mux: CM4 PPS -> DPLL IN2)")
-        run(["gpioset", "gpiochip2", "14=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "14=1"], dry_run=dry_run)
     elif use_sma2_input:
         print("DPLL IN2 source: SMA2 path (board mux: SMA2 -> DPLL IN2)")
-        run(["gpioset", "gpiochip2", "14=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "14=0"], dry_run=dry_run)
     else:
         # If neither, you can default to CM4 path or SMA2 path as you like.
         print("DPLL IN2 source: defaulting to CM4 path (no SMA2 input selected and CM4 not used as ref)")
-        run(["gpioset", "gpiochip2", "14=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "14=1"], dry_run=dry_run)
 
     # --- DPLL IN3: SMA3 path vs GPS 1PPS ---
     use_gps = cfg.gps.present and cfg.gps.role is not None
@@ -310,14 +310,14 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
 
     if use_gps:
         print("DPLL IN3 source: GPS 1PPS (board mux: GPS -> DPLL IN3)")
-        run(["gpioset", "gpiochip2", "13=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "13=1"], dry_run=dry_run)
     elif use_sma3_input:
         print("DPLL IN3 source: SMA3 path (board mux: SMA3 -> DPLL IN3)")
-        run(["gpioset", "gpiochip2", "13=0"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "13=0"], dry_run=dry_run)
     else:
         # Default; if GPS hardware is present but not used as ref, you might still pick it
         print("DPLL IN3 source: defaulting to GPS path (no SMA3 input selected)")
-        run(["gpioset", "gpiochip2", "13=1"], dry_run=dry_run)
+        run(["gpioset", "-t", "0", "-c", "gpiochip2", "13=1"], dry_run=dry_run)
 
     # DPLL IN4 has no mux (always SMA4 path) -> nothing to do here.
 

@@ -17,6 +17,7 @@ TARGET  := dplltool
 # Install locations
 PREFIX  ?= /usr/local
 SBINDIR ?= $(PREFIX)/sbin
+FIX_SCRIPT := fastlock_1pps_fix.sh
 
 .PHONY: all clean install
 
@@ -36,4 +37,5 @@ clean:
 install: $(TARGET) $(DISC_TARGET)
 	install -d $(DESTDIR)$(SBINDIR)
 	install -m 0755 $(TARGET) $(DESTDIR)$(SBINDIR)/$(TARGET)
+	install -m 0755 $(FIX_SCRIPT) $(DESTDIR)$(SBINDIR)/$(FIX_SCRIPT)
 

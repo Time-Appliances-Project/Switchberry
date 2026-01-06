@@ -21,16 +21,16 @@ install: $(PY_SCRIPTS)
 	@echo "Installing ClockMatrix Python tools into $(DESTDIR)$(BINDIR)"
 	$(INSTALL) -d "$(DESTDIR)$(BINDIR)"
 	# apply_timing.py -> apply_timing
-	$(INSTALL) -m 0755 apply_timing.py "$(DESTDIR)$(BINDIR)/apply_timing"
+	$(INSTALL) -m 0755 apply_timing.py "$(DESTDIR)$(BINDIR)/apply_timing.py"
 	# config.py as importable module
 	$(INSTALL) -m 0644 config.py "$(DESTDIR)$(BINDIR)/config.py"
 	# optional convenience wrapper: config.py -> clockmatrix-config
-	$(INSTALL) -m 0755 config.py "$(DESTDIR)$(BINDIR)/clockmatrix-config"
+	$(INSTALL) -m 0755 config.py "$(DESTDIR)$(BINDIR)/clockmatrix-config.py"
 
 uninstall:
 	@echo "Removing ClockMatrix Python tools from $(DESTDIR)$(BINDIR)"
-	rm -f "$(DESTDIR)$(BINDIR)/apply_timing"
-	rm -f "$(DESTDIR)$(BINDIR)/clockmatrix-config"
+	rm -f "$(DESTDIR)$(BINDIR)/apply_timing.py"
+	rm -f "$(DESTDIR)$(BINDIR)/clockmatrix-config.py"
 
 clean:
 	@echo "Nothing to clean in clockmatrix."
