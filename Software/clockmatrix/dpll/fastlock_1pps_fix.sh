@@ -167,6 +167,7 @@ init_ch() {
 
 is_locked() { [[ "$1" == "LOCKED" ]]; }
 is_lockrec() { [[ "$1" == "LOCKREC" ]]; }
+is_lockacq() { [[ "$1" == "LOCKACQ" ]]; }
 
 in_startup_aggressive() {
   local t="$1" start_t="$2"
@@ -251,11 +252,17 @@ unlocked_is_acceptable_nochange() {
   if (( t - lc < accept_sec )); then
 	# If we've been stuck in LOCKREC for the full accept_sec window,
 	# do NOT accept it as "no ref present" (allow the reset logic to run).
-    if is_lockrec "$st"; then
-      return 0
-    fi
     return 1
   fi
+    #log "CHECK: CHANNEL ${ch} in lockrec or lockacq"
+    if is_lockrec "$st"; then
+      #log "EVENT-DECIDE: CHANNEL ${ch} STUCK IN LOCKREC" 
+      return 0
+    fi
+    if is_lockacq "$st"; then
+      #log "EVENT-DECIDE: CHANNEL ${ch} STUCK IN LOCKACQ" 
+      return 0
+    fi
 
 
   return 0

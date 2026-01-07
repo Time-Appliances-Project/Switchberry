@@ -129,7 +129,7 @@ cd Switchberry
 
 ```bash
 sudo apt update
-sudo apt install bc bison flex libssl-dev make screen vim automake autoconf libmnl-dev libmnl-doc jq gpsd gpsd-clients socat linuxptp 
+sudo apt install bc bison flex libssl-dev make screen vim automake tshark autoconf libmnl-dev libmnl-doc jq gpsd gpsd-clients socat linuxptp 
 ```
 
 ### 4) Clone kernel sources
