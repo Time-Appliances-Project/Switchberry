@@ -30,10 +30,10 @@ find "${ROOT}" -name 'Makefile' -print0 | while IFS= read -r -d '' mk; do
     )
 done
 
-cd "linuxptp"
-chmod +x incdefs.sh version.sh
-make all
-sudo make install
+#cd "linuxptp"
+#chmod +x incdefs.sh version.sh
+#make all
+#sudo make install
 
 echo
 echo "All done."
