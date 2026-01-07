@@ -166,6 +166,7 @@ init_ch() {
 }
 
 is_locked() { [[ "$1" == "LOCKED" ]]; }
+is_lockrec() { [[ "$1" == "LOCKREC" ]]; }
 
 in_startup_aggressive() {
   local t="$1" start_t="$2"
@@ -242,8 +243,22 @@ unlocked_is_acceptable_nochange() {
   if is_locked "$st"; then
     return 1
   fi
+
   local lc="${last_change_s[$ch]}"
-  (( t - lc >= accept_sec ))
+
+  # Only consider "acceptable no-ref" once the state has been steady long enough.
+  # (Before that, we're still waiting to see if it recovers / stabilizes.)
+  if (( t - lc < accept_sec )); then
+	# If we've been stuck in LOCKREC for the full accept_sec window,
+	# do NOT accept it as "no ref present" (allow the reset logic to run).
+    if is_lockrec "$st"; then
+      return 0
+    fi
+    return 1
+  fi
+
+
+  return 0
 }
 
 update_ch2_stable_lock_edge() {

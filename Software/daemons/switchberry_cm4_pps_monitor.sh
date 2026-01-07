@@ -1,128 +1,158 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- Config (override via Environment= in systemd unit if you want) ---
-PTP_DEVICE="${PTP_DEVICE:-/dev/ptp0}"
-CLIENT_UNIT="${CLIENT_UNIT:-ptp4l-switchberry-client.service}"
+# switchberry_cm4_pps_monitor.sh
+#
+# Intent:
+#   Gate the CM4 NIC PHC PPS *output* (PEROUT) based on whether the ptp4l client
+#   appears to be tightly locked to its master.
+#
+#   Enable PPS output only when ALL of these are true:
+#     1) The ptp4l client systemd unit is running
+#     2) ptp4l is currently in servo state s2
+#     3) The last N "master offset" samples (in s2) are within a threshold
+#
+#   If any condition stops being true, disable PPS output and print WHY.
 
-PPS_PERIOD_NS="${PPS_PERIOD_NS:-1000000000}"  # 1 Hz PPS
+# ---- Tunables (override via environment) ----
+CLIENT_UNIT="${CLIENT_UNIT:-ptp4l-switchberry-client.service}"
+PTP_DEVICE="${PTP_DEVICE:-/dev/ptp0}"
 TESTPTP_BIN="${TESTPTP_BIN:-testptp}"
 
+# How often to re-check lock status
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
-JOURNAL_LINES="${JOURNAL_LINES:-250}"
 
-# Require N consecutive "locked" polls before enabling PPS (reduces flapping)
-LOCK_STABLE_COUNT="${LOCK_STABLE_COUNT:-3}"
+# How many journal lines to scan each poll
+JOURNAL_LINES="${JOURNAL_LINES:-200}"
 
-# If pmc is available, also require portState=SLAVE (more robust)
-REQUIRE_PMC_SLAVE="${REQUIRE_PMC_SLAVE:-1}"
+# How many recent offset samples must be "tight"
+OFFSET_SAMPLES="${OFFSET_SAMPLES:-3}"
 
-log() { echo "cm4-pps-monitor: $*"; }
+# "four digit lock" => abs(offset) <= 9999 ns by default
+OFFSET_ABS_MAX_NS="${OFFSET_ABS_MAX_NS:-9999}"
 
-disable_pps() {
-  if command -v "$TESTPTP_BIN" >/dev/null 2>&1; then
-    "$TESTPTP_BIN" -d "$PTP_DEVICE" -L 0,0 >/dev/null 2>&1 || true
-  fi
+# PEROUT configuration (testptp)
+PPS_OUT_CH="${PPS_OUT_CH:-0}"
+PPS_PERIOD_NS="${PPS_PERIOD_NS:-1000000000}"   # 1 Hz
+
+log() {
+  echo "[$(date -Is)] $*" >&2
 }
 
-enable_pps() {
-  "$TESTPTP_BIN" -d "$PTP_DEVICE" -L 0,2
-  "$TESTPTP_BIN" -d "$PTP_DEVICE" -p "$PPS_PERIOD_NS"
-}
-
-client_active() {
+# Return 0 if the systemd unit is active.
+client_running() {
   systemctl is-active --quiet "$CLIENT_UNIT"
 }
 
-journal_since_client_start() {
-  # Use service active-enter time to avoid matching old logs from previous runs
-  local since
-  since="$(systemctl show -p ActiveEnterTimestamp --value "$CLIENT_UNIT" 2>/dev/null || true)"
-  if [[ -n "${since:-}" && "$since" != "n/a" ]]; then
-    journalctl -u "$CLIENT_UNIT" --since "$since" -n "$JOURNAL_LINES" --no-pager -o cat 2>/dev/null || true
-  else
-    journalctl -u "$CLIENT_UNIT" -n "$JOURNAL_LINES" --no-pager -o cat 2>/dev/null || true
+# Extract the most recent servo state from ptp4l logs (s0/s1/s2).
+# Prints "s2" etc. or empty if not found.
+current_servo_state() {
+  journalctl -u "$CLIENT_UNIT" -n "$JOURNAL_LINES" -o cat 2>/dev/null \
+    | grep -E 'master offset' \
+    | tail -n 1 \
+    | sed -nE 's/.*master offset[[:space:]]+-?[0-9]+[[:space:]]+(s[0-9]+)[[:space:]]+freq.*/\1/p'
+}
+
+# Print the last N "master offset" values (ns) from s2 lines, one per line.
+last_s2_offsets_ns() {
+  local n="$1"
+  journalctl -u "$CLIENT_UNIT" -n "$JOURNAL_LINES" -o cat 2>/dev/null \
+    | sed -nE 's/.*master offset[[:space:]]+(-?[0-9]+)[[:space:]]+s2[[:space:]]+freq.*/\1/p' \
+    | tail -n "$n"
+}
+
+enable_pps() {
+  "$TESTPTP_BIN" -d "$PTP_DEVICE" -L "${PPS_OUT_CH},2" >/dev/null 2>&1
+  "$TESTPTP_BIN" -d "$PTP_DEVICE" -p "$PPS_PERIOD_NS"  >/dev/null 2>&1
+}
+
+disable_pps() {
+  "$TESTPTP_BIN" -d "$PTP_DEVICE" -L "${PPS_OUT_CH},0" >/dev/null 2>&1 || true
+}
+
+# Sets FAIL_REASON and returns:
+#   0 => OK to enable PPS
+#   1 => Not OK (FAIL_REASON explains why)
+check_conditions() {
+  FAIL_REASON=""
+
+  # 1) Is the service running?
+  if ! client_running; then
+    FAIL_REASON="client unit not running: $CLIENT_UNIT"
+    return 1
   fi
-}
 
-last_servo_state() {
-  # Looks for the last occurrence of "servo state sX" in ptp4l logs.
-  # Example line often contains: "servo state s2"
-  local txt
-  txt="$(journal_since_client_start)"
-  echo "$txt" | grep -Eo 'servo state s[0-9]+' | tail -n1 | awk '{print $NF}' || true
-}
+  # 2) Is the servo in s2?
+  local st
+  st="$(current_servo_state)"
+  if [[ "$st" != "s2" ]]; then
+    FAIL_REASON="not in s2 (last servo state='${st:-<none>}')"
+    return 1
+  fi
 
-pmc_port_is_slave() {
-  # Optional: if pmc exists, ask ptp4l via UDS for PORT_DATA_SET and require SLAVE.
-  # This is a best-effort check; if pmc fails, we return "unknown" (non-zero).
-  command -v pmc >/dev/null 2>&1 || return 2
+  # 3) Are the last N offsets small enough?
+  local -a offs
+  mapfile -t offs < <(last_s2_offsets_ns "$OFFSET_SAMPLES" || true)
 
-  # pmc -u uses ptp4l's local UDS management socket (common linuxptp setup)
-  local out state
-  out="$(pmc -u -b 0 -t 1 "GET PORT_DATA_SET" 2>/dev/null || true)"
-  state="$(echo "$out" | awk '/portState/ {print $2; exit}')"
+  if (( ${#offs[@]} < OFFSET_SAMPLES )); then
+    FAIL_REASON="not enough s2 offset samples (have ${#offs[@]}, need $OFFSET_SAMPLES)"
+    return 1
+  fi
 
-  [[ "$state" == "SLAVE" ]]
-}
-
-is_locked() {
-  # Must be active
-  client_active || return 1
-
-  # Must have /dev/ptp* available
-  [[ -e "$PTP_DEVICE" ]] || return 1
-
-  # Must have testptp available
-  command -v "$TESTPTP_BIN" >/dev/null 2>&1 || return 1
-
-  # Must be servo s2
-  local s
-  s="$(last_servo_state)"
-  [[ "$s" == "s2" ]] || return 1
-
-  # Optional: also require portState=SLAVE if pmc is present/enabled
-  if [[ "$REQUIRE_PMC_SLAVE" == "1" ]]; then
-    if command -v pmc >/dev/null 2>&1; then
-      pmc_port_is_slave || return 1
+  local s a
+  for s in "${offs[@]}"; do
+    a=$s; (( a < 0 )) && a=$(( -a ))
+    if (( a > OFFSET_ABS_MAX_NS )); then
+      FAIL_REASON="offset too large: ${s} ns (limit ±${OFFSET_ABS_MAX_NS} ns); recent=(${offs[*]})"
+      return 1
     fi
-  fi
+  done
 
   return 0
 }
 
-# Ensure PPS is disabled on exit (or when service is stopped)
-trap 'log "Exiting; disabling PPS"; disable_pps' EXIT
+# ---- Startup sanity checks ----
+if ! command -v "$TESTPTP_BIN" >/dev/null 2>&1; then
+  log "ERROR: $TESTPTP_BIN not found in PATH"
+  exit 1
+fi
 
-log "Starting. device=$PTP_DEVICE unit=$CLIENT_UNIT poll=${POLL_INTERVAL_SEC}s stable=$LOCK_STABLE_COUNT require_pmc_slave=$REQUIRE_PMC_SLAVE"
+if [[ ! -e "$PTP_DEVICE" ]]; then
+  log "ERROR: PTP device $PTP_DEVICE not found"
+  exit 1
+fi
 
 pps_enabled=0
-stable_locked=0
+FAIL_REASON=""
 
-# Start safe: disable PPS until we know we are locked
-disable_pps
+# Always try to disable PPS when exiting (best-effort).
+cleanup() {
+  if (( pps_enabled == 1 )); then
+    disable_pps
+  fi
+}
+trap cleanup EXIT INT TERM
 
+log "Starting PPS monitor: unit=$CLIENT_UNIT dev=$PTP_DEVICE poll=${POLL_INTERVAL_SEC}s samples=$OFFSET_SAMPLES thr=±${OFFSET_ABS_MAX_NS}ns"
+
+# ---- Main loop ----
 while true; do
-  if is_locked; then
-    stable_locked=$((stable_locked + 1))
-    if [[ $pps_enabled -eq 0 && $stable_locked -ge $LOCK_STABLE_COUNT ]]; then
-      log "ptp4l locked (servo s2); enabling PPS output via testptp"
+  if check_conditions; then
+    if (( pps_enabled == 0 )); then
+      log "Conditions met: enabling PPS output (PEROUT) ch=$PPS_OUT_CH period=${PPS_PERIOD_NS}ns; recent offsets: $(last_s2_offsets_ns "$OFFSET_SAMPLES" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
       if enable_pps; then
         pps_enabled=1
-        log "PPS enabled"
+        log "PPS output enabled"
       else
-        log "Failed to enable PPS; will retry"
-        disable_pps
-        pps_enabled=0
-        stable_locked=0
+        log "ERROR: failed to enable PPS output via testptp"
       fi
     fi
   else
-    stable_locked=0
-    if [[ $pps_enabled -eq 1 ]]; then
-      log "ptp4l not locked / not running; disabling PPS"
+    if (( pps_enabled == 1 )); then
+      log "Conditions failed: disabling PPS output: $FAIL_REASON"
       disable_pps
       pps_enabled=0
+      log "PPS output disabled"
     fi
   fi
 
