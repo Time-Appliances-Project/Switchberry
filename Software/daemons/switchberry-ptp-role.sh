@@ -29,6 +29,7 @@ case "${ROLE}" in
 
         # Optional cleanup: stop client stack if running
         systemctl stop ptp4l-switchberry-client.service 2>/dev/null || true
+	systemctl stop switchberry-cm4-pps-monitor.service || true
         ;;
 
     CLIENT)
@@ -36,6 +37,7 @@ case "${ROLE}" in
 
         # Start client stack (you’ll define these separately)
         systemctl start ptp4l-switchberry-client.service || true
+	systemctl start switchberry-cm4-pps-monitor.service || true
 
         # Optional cleanup: stop GM stack if running
         systemctl stop ts2phc-switchberry.service 2>/dev/null || true
@@ -46,6 +48,7 @@ case "${ROLE}" in
         echo "[switchberry-ptp-role] PTP role NONE/unknown; no PTP services started"
         # Optional: stop everything
         systemctl stop ts2phc-switchberry.service 2>/dev/null || true
+	systemctl stop switchberry-cm4-pps-monitor.service || true
         systemctl stop ptp4l-switchberry-gm.service 2>/dev/null || true
         systemctl stop ptp4l-switchberry-client.service 2>/dev/null || true
         ;;
