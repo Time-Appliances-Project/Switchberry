@@ -5,26 +5,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../ksz9567_spi.sh"
 
 
-ALL_PORTS=(0 1 2 3 4 5)
+ALL_PORTS=(1 2 3 4 5)
 
 port_enable() {
-    for port in "$@"; do
-	echo "Enabling port $port"
-	ksz9567_spi_write16 $(ksz9567_get_port_register $port 0x100) 0x1300
+    for phys_port in "$@"; do
+        local log_port
+        log_port=$(get_logical_port_or_error "$phys_port")
+        echo "Enabling Port $phys_port (Logical $log_port)"
+        ksz9567_spi_write16 $(ksz9567_get_port_register $log_port 0x100) 0x1300
     done
 }
 
 port_disable() {
-    for port in "$@"; do
-	echo "Disabling port $port"
-	ksz9567_spi_write16 $(ksz9567_get_port_register $port 0x100) 0xc00
+    for phys_port in "$@"; do
+        local log_port
+        log_port=$(get_logical_port_or_error "$phys_port")
+        echo "Disabling Port $phys_port (Logical $log_port)"
+        ksz9567_spi_write16 $(ksz9567_get_port_register $log_port 0x100) 0xc00
     done
 }
 
 port_status() {
-    for port in "$@"; do
-	status=$(ksz9567_read_port_link_status "$port")
-	echo "Port $port : $status"
+    for phys_port in "$@"; do
+        local log_port
+        log_port=$(get_logical_port_or_error "$phys_port")
+        status=$(ksz9567_read_port_link_status "$log_port")
+        echo "Port $phys_port : $status"
     done
 }
 

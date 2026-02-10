@@ -3,30 +3,32 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../ksz9567_spi.sh"
 
-ALL_PORTS=(0 1 2 3 4 5)
+ALL_PORTS=(1 2 3 4 5)
 
 read_counters() {
-    for port in "$@"; do
-        echo "Reading counters for port $port"
-	for key in "${!port_counters[@]}"; do
-		reg_addr="${port_counters[$key]}"
-		reg_name="$key"
-		val=$(ksz9567_get_port_counter $port $reg_addr)
-		echo "Port $port , $reg_name = $val"	
-	done
+    for phys_port in "$@"; do
+        local log_port
+        log_port=$(get_logical_port_or_error "$phys_port")
+        echo "Reading counters for Port $phys_port (Logical $log_port)"
+        for key in "${!port_counters[@]}"; do
+            reg_addr="${port_counters[$key]}"
+            reg_name="$key"
+            val=$(ksz9567_get_port_counter $log_port $reg_addr)
+            echo "Port $phys_port , $reg_name = $val"    
+        done
     done
 }
 
 clear_counters() {
-    for port in "$@"; do
-        echo "Clearing counters for port $port"
+    for phys_port in "$@"; do
+        local log_port
+        log_port=$(get_logical_port_or_error "$phys_port")
+        echo "Clearing counters for Port $phys_port (Logical $log_port)"
         # basically same as read, just ignore the results
-	for key in "${!port_counters[@]}"; do
-		reg_addr="${port_counters[$key]}"
-		reg_name="$key"
-		val=$(ksz9567_get_port_counter $port $reg_addr)
-		#echo "Port $port , $reg_name = $val"	
-	done
+        for key in "${!port_counters[@]}"; do
+            reg_addr="${port_counters[$key]}"
+            val=$(ksz9567_get_port_counter $log_port $reg_addr)
+        done
     done
 }
 

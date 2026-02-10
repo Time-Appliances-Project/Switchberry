@@ -27,15 +27,15 @@ set -euo pipefail
 POLL_SEC=0.2
 STARTUP_AGGRESSIVE_SEC=60
 
-CH2=2
-GPS_CHANS=(5 6)
+FREQ_CH=5
+GPS_CHANS=(6)
 
 # --- Normal thresholds ---
-CH2_UNLOCK_SEC=8
-CH2_FLAP_WINDOW_SEC=5
-CH2_FLAP_COUNT=6
-CH2_RESET_COOLDOWN_SEC=12
-CH2_RESET_PULSE_SEC=0.4
+FREQ_CH_UNLOCK_SEC=10
+FREQ_CH_FLAP_WINDOW_SEC=5
+FREQ_CH_FLAP_COUNT=6
+FREQ_CH_RESET_COOLDOWN_SEC=12
+FREQ_CH_RESET_PULSE_SEC=0.4
 
 GPS_UNLOCK_SEC=20
 GPS_FLAP_WINDOW_SEC=8
@@ -44,30 +44,30 @@ GPS_RESET_COOLDOWN_SEC=15
 GPS_RESET_PULSE_SEC=0.25
 
 # "No ref present" accept logic (unlocked + no state changes for a while is valid)
-CH2_NOCHANGE_ACCEPT_SEC=10
+FREQ_CH_NOCHANGE_ACCEPT_SEC=10
 GPS_NOCHANGE_ACCEPT_SEC=10
 
-# Stable-lock definition for CH2 (used for CH2->LOCKED event)
-CH2_STABLE_LOCK_SEC=2
+# Stable-lock definition for FREQ_CH (used for FREQ_CH->LOCKED event)
+FREQ_CH_STABLE_LOCK_SEC=2
 
 # --- Startup aggressive thresholds ---
-CH2_UNLOCK_SEC_AGG=4
-CH2_FLAP_WINDOW_SEC_AGG=4
-CH2_FLAP_COUNT_AGG=4
+FREQ_CH_UNLOCK_SEC_AGG=4
+FREQ_CH_FLAP_WINDOW_SEC_AGG=4
+FREQ_CH_FLAP_COUNT_AGG=4
 
 GPS_UNLOCK_SEC_AGG=10
 GPS_FLAP_WINDOW_SEC_AGG=6
 GPS_FLAP_COUNT_AGG=4
 
-# What to do when CH2 becomes stably locked:
+# What to do when FREQ_CH becomes stably locked:
 #   0 = do nothing special
-#   1 = force reset CH5/6 immediately
-#   2 = boost monitoring aggressiveness for CH5/6 for GPS_BOOST_SEC
-CH2_LOCK_EVENT_GPS_ACTION=1
+#   1 = force reset GPS_CHANS (Ch6) immediately
+#   2 = boost monitoring aggressiveness for GPS_CHANS
+FREQ_LOCK_EVENT_GPS_ACTION=1
 GPS_BOOST_SEC=30
 
-# Optional gating: only supervise GPS channels when CH2 is LOCKED
-GATE_GPS_ON_CH2_LOCKED=0
+# Optional gating: only supervise GPS channels when FREQ_CH is LOCKED
+GATE_GPS_ON_FREQ_LOCKED=0
 
 # ------------------------------ Status file -----------------------------------
 
@@ -147,11 +147,11 @@ declare -A flap_count
 declare -A unlock_since_s
 declare -A last_reset_s
 
-# CH2 stable-lock edge detection
-ch2_locked_since_s=0
-ch2_stably_locked=0
+# FREQ_CH stable-lock edge detection
+freq_locked_since_s=0
+freq_stably_locked=0
 
-# GPS temporary boost after CH2 locks
+# GPS temporary boost after FREQ_CH locks
 gps_boost_until_s=0
 
 init_ch() {
@@ -268,35 +268,35 @@ unlocked_is_acceptable_nochange() {
   return 0
 }
 
-update_ch2_stable_lock_edge() {
-  local t="$1" st2="$2"
+update_freq_stable_lock_edge() {
+  local t="$1" st_freq="$2"
 
-  if is_locked "$st2"; then
-    if (( ch2_locked_since_s == 0 )); then
-      ch2_locked_since_s="$t"
+  if is_locked "$st_freq"; then
+    if (( freq_locked_since_s == 0 )); then
+      freq_locked_since_s="$t"
     fi
-    if (( ch2_stably_locked == 0 )) && (( t - ch2_locked_since_s >= CH2_STABLE_LOCK_SEC )); then
-      ch2_stably_locked=1
-      log "EVENT: CH2 became STABLY LOCKED (>=${CH2_STABLE_LOCK_SEC}s). Likely combo-bus freq step."
+    if (( freq_stably_locked == 0 )) && (( t - freq_locked_since_s >= FREQ_CH_STABLE_LOCK_SEC )); then
+      freq_stably_locked=1
+      log "EVENT: CH$FREQ_CH became STABLY LOCKED (>=${FREQ_CH_STABLE_LOCK_SEC}s). Likely combo-bus freq step."
 
-      if (( CH2_LOCK_EVENT_GPS_ACTION == 1 )); then
-        log "EVENT-ACTION: Forcing CH${GPS_CHANS[0]}/CH${GPS_CHANS[1]} reset due to CH2 stable lock"
+      if (( FREQ_LOCK_EVENT_GPS_ACTION == 1 )); then
+        log "EVENT-ACTION: Forcing GPS Channels reset due to CH$FREQ_CH stable lock"
         for ch in "${GPS_CHANS[@]}"; do
           force_reset_pulse "$ch" "$GPS_RESET_PULSE_SEC"
         done
-      elif (( CH2_LOCK_EVENT_GPS_ACTION == 2 )); then
+      elif (( FREQ_LOCK_EVENT_GPS_ACTION == 2 )); then
         gps_boost_until_s=$(( t + GPS_BOOST_SEC ))
-        log "EVENT-ACTION: Boost monitoring aggressiveness for CH5/6 for ${GPS_BOOST_SEC}s"
+        log "EVENT-ACTION: Boost monitoring aggressiveness for GPS Chans for ${GPS_BOOST_SEC}s"
       else
-        log "EVENT-ACTION: No special CH5/6 action configured (CH2_LOCK_EVENT_GPS_ACTION=0)"
+        log "EVENT-ACTION: No special action configured (FREQ_LOCK_EVENT_GPS_ACTION=0)"
       fi
     fi
   else
-    ch2_locked_since_s=0
-    if (( ch2_stably_locked == 1 )); then
-      log "EVENT: CH2 left LOCKED state (state=$st2)"
+    freq_locked_since_s=0
+    if (( freq_stably_locked == 1 )); then
+      log "EVENT: CH$FREQ_CH left LOCKED state (state=$st_freq)"
     fi
-    ch2_stably_locked=0
+    freq_stably_locked=0
   fi
 }
 
@@ -311,19 +311,19 @@ monitor_channel() {
   fi
 
   local unlock_sec flap_win flap_cnt cooldown pulse nochange_accept
-  if [[ "$ch" -eq "$CH2" ]]; then
+  if [[ "$ch" -eq "$FREQ_CH" ]]; then
     if (( aggressive )); then
-      unlock_sec="$CH2_UNLOCK_SEC_AGG"
-      flap_win="$CH2_FLAP_WINDOW_SEC_AGG"
-      flap_cnt="$CH2_FLAP_COUNT_AGG"
+      unlock_sec="$FREQ_CH_UNLOCK_SEC_AGG"
+      flap_win="$FREQ_CH_FLAP_WINDOW_SEC_AGG"
+      flap_cnt="$FREQ_CH_FLAP_COUNT_AGG"
     else
-      unlock_sec="$CH2_UNLOCK_SEC"
-      flap_win="$CH2_FLAP_WINDOW_SEC"
-      flap_cnt="$CH2_FLAP_COUNT"
+      unlock_sec="$FREQ_CH_UNLOCK_SEC"
+      flap_win="$FREQ_CH_FLAP_WINDOW_SEC"
+      flap_cnt="$FREQ_CH_FLAP_COUNT"
     fi
-    cooldown="$CH2_RESET_COOLDOWN_SEC"
-    pulse="$CH2_RESET_PULSE_SEC"
-    nochange_accept="$CH2_NOCHANGE_ACCEPT_SEC"
+    cooldown="$FREQ_CH_RESET_COOLDOWN_SEC"
+    pulse="$FREQ_CH_RESET_PULSE_SEC"
+    nochange_accept="$FREQ_CH_NOCHANGE_ACCEPT_SEC"
   else
     if (( aggressive )); then
       unlock_sec="$GPS_UNLOCK_SEC_AGG"
@@ -394,15 +394,31 @@ update_overall_status() {
   #            we are not currently/just intervening.
   #   NOT_OK => we are intervening (or just intervened within holdoff window).
   local t="$1"
+  
+  local st_freq
+  st_freq="$(dpll_get_state "$FREQ_CH")"
+  
+  local gps_status_str=""
+  local all_gps_locked=1
+  local all_gps_no_ref=1
 
-  local st2 st5 st6
-  st2="$(dpll_get_state "$CH2")"
-  st5="$(dpll_get_state "${GPS_CHANS[0]}")"
-  st6="$(dpll_get_state "${GPS_CHANS[1]}")"
+  for ch in "${GPS_CHANS[@]}"; do
+      local st
+      st="$(dpll_get_state "$ch")"
+      gps_status_str="$gps_status_str CH$ch=$st"
+
+      if [[ "$st" != "LOCKED" ]]; then
+          all_gps_locked=0
+      fi
+
+      if ! unlocked_is_acceptable_nochange "$ch" "$t" "$st" "$GPS_NOCHANGE_ACCEPT_SEC"; then
+          all_gps_no_ref=0
+      fi
+  done
 
   # If we intervened recently, keep NOT_OK briefly so consumers can safely pause.
   if (( last_any_intervention_s > 0 )) && (( t - last_any_intervention_s < STATUS_INTERVENTION_HOLDOFF_SEC )); then
-    set_status "NOT_OK" "INTERVENING age=${t-last_any_intervention_s}s CH2=$st2 CH5=$st5 CH6=$st6"
+    set_status "NOT_OK" "INTERVENING age=${t-last_any_intervention_s}s FREQ(CH$FREQ_CH)=$st_freq $gps_status_str"
     return 0
   fi
 
@@ -410,21 +426,15 @@ update_overall_status() {
   # Add a small hint message for humans.
   local hint=""
 
-  if [[ "$st5" != "LOCKED" || "$st6" != "LOCKED" ]]; then
-    local no_ref5=0 no_ref6=0
-    if unlocked_is_acceptable_nochange "${GPS_CHANS[0]}" "$t" "$st5" "$GPS_NOCHANGE_ACCEPT_SEC"; then no_ref5=1; fi
-    if unlocked_is_acceptable_nochange "${GPS_CHANS[1]}" "$t" "$st6" "$GPS_NOCHANGE_ACCEPT_SEC"; then no_ref6=1; fi
-
-    if (( no_ref5 == 1 && no_ref6 == 1 )); then
-      hint="NO_REF"
-    else
-      hint="UNLOCKED"
-    fi
+  if (( all_gps_locked == 1 )); then
+    hint="LOCKED" 
+  elif (( all_gps_no_ref == 1 )); then
+    hint="NO_REF"
   else
-    hint="LOCKED"
+    hint="UNLOCKED"
   fi
 
-  set_status "OK" "$hint CH2=$st2 CH5=$st5 CH6=$st6"
+  set_status "OK" "$hint FREQ(CH$FREQ_CH)=$st_freq $gps_status_str"
   return 0
 }
 
@@ -433,25 +443,25 @@ update_overall_status() {
 main() {
   local start_t; start_t="$(now_s)"
   log "dpll-monitor starting (poll=${POLL_SEC}s, startup_aggressive=${STARTUP_AGGRESSIVE_SEC}s)"
-  log "Config: CH2_LOCK_EVENT_GPS_ACTION=$CH2_LOCK_EVENT_GPS_ACTION (0=none,1=force reset,2=boost ${GPS_BOOST_SEC}s)"
+  log "Config: FREQ_LOCK_EVENT_GPS_ACTION=$FREQ_LOCK_EVENT_GPS_ACTION (0=none,1=force reset,2=boost ${GPS_BOOST_SEC}s)"
   log "Status file: ${STATUS_FILE} (OK only unless intervening). Holdoff: ${STATUS_INTERVENTION_HOLDOFF_SEC}s"
-  log "No-ref accept: CH2=${CH2_NOCHANGE_ACCEPT_SEC}s, CH5/6=${GPS_NOCHANGE_ACCEPT_SEC}s"
+  log "No-ref accept: FREQ(CH$FREQ_CH)=${FREQ_CH_NOCHANGE_ACCEPT_SEC}s, GPS=${GPS_NOCHANGE_ACCEPT_SEC}s"
 
   set_status "OK" "STARTING"
 
-  init_ch "$CH2"
+  init_ch "$FREQ_CH"
   for ch in "${GPS_CHANS[@]}"; do init_ch "$ch"; done
 
   while true; do
     local t; t="$(now_s)"
 
-    # --- Channel 2 first ---
-    local st2; st2="$(dpll_get_state "$CH2")"
-    update_ch2_stable_lock_edge "$t" "$st2"
-    monitor_channel "$CH2" "$t" "$start_t" 0
+    # --- FREQ Channel first ---
+    local st_freq; st_freq="$(dpll_get_state "$FREQ_CH")"
+    update_freq_stable_lock_edge "$t" "$st_freq"
+    monitor_channel "$FREQ_CH" "$t" "$start_t" 0
 
     # --- GPS channels ---
-    if (( GATE_GPS_ON_CH2_LOCKED == 1 )) && [[ "$st2" != "LOCKED" ]]; then
+    if (( GATE_GPS_ON_FREQ_LOCKED == 1 )) && [[ "$st_freq" != "LOCKED" ]]; then
       update_overall_status "$t"
       sleep_s "$POLL_SEC"
       continue
@@ -474,4 +484,3 @@ main() {
 }
 
 main "$@"
-

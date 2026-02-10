@@ -2,6 +2,41 @@
 
 This guide gets you from “fresh install” to a working timing/PTP setup, and shows how to customize behavior using the `config.py` wizard and the daemon Makefile.
 
+### System Overview
+
+```mermaid
+graph TD
+    subgraph Sources [Timing Sources]
+        GPS[GPS Receiver]
+        SyncE[SyncE Network]
+        SMA_In[SMA Inputs]
+    end
+
+    subgraph Switchberry
+        direction TB
+        DPLL[8A34004 DPLL]
+        CM4[Compute Module 4]
+        Switch[KSZ9567 Switch]
+    end
+
+    subgraph Outputs [Timing Distribution]
+        PTP[PTP Network]
+        SMA_Out[SMA Outputs]
+    end
+
+    %% Flow
+    GPS -->|1PPS| DPLL
+    SMA_In -->|Freq/Time| DPLL
+    SyncE -->|Recovered Clock| Switch
+    Switch -->|25MHz Ref| DPLL
+
+    DPLL -->|1PPS| CM4
+    DPLL -->|Freq & 1PPS| SMA_Out
+    
+    CM4 -->|System Time| PTP
+    Switch -->|PTP Packets| PTP
+```
+
 ---
 
 ## Default behavior (out of the box)
@@ -15,14 +50,18 @@ If you haven’t customized `/etc/startup-dpll.json`, the default setup is:
 ### Input priorities
 - **Time sources**
   1. **GPS** (highest priority for time)
-  2. **SMA1 = 1PPS input** (fallback time behind GPS)
+  2. **User SMA4** (HW SMA1) = 1PPS input (fallback time behind GPS)
 
 - **Frequency sources**
-  1. **SMA4 = 10MHz input** (highest priority for frequency)
+  1. **User SMA1** (HW SMA4) = 10MHz input (highest priority for frequency)
 
 ### Outputs
-- **SMA2 = 1PPS output**
-- **SMA3 = 10MHz output**
+- **User SMA3** (HW SMA2) = 1PPS output (or other frequency)
+- **User SMA2** (HW SMA3) = 10MHz output (**frequency-only**, V6 board - not phase-aligned)
+
+> **V6 Board Note:** **User SMA2** (HW SMA3) is routed via Q9/Channel 5 (SyncE frequency channel) and only
+> provides frequency alignment, not phase alignment. For phase-aligned 1PPS output,
+> use **User SMA4** (HW SMA1) instead (which is routed via Q11/Channel 6).
 
 ---
 

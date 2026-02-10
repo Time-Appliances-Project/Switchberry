@@ -92,6 +92,18 @@ logical_to_physical() {
   esac
 }
 
+# Helper: validate physical port and return logical port, or exit with error
+get_logical_port_or_error() {
+  local phys="$1"
+  local log
+  log=$(physical_to_logical "$phys")
+  if [ $? -ne 0 ]; then
+     echo "Error: Invalid physical port '$phys'. Must be 1-5." >&2
+     exit 1
+  fi
+  echo "$log"
+}
+
 # Helper: pretty-print the mapping (handy for --help output)
 print_port_map() {
   cat <<'EOF'

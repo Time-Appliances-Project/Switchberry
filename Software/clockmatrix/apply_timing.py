@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import subprocess
+import math
 from typing import Dict, Tuple
 
 # Import your existing config logic
 # Make sure config.py (the wizard/validate script) is in the same directory or PYTHONPATH.
 from config import TimingConfig, load_config, derive_plan, PtpRole, TimeFreqRole
+
+# ---------- Constants ----------
+DCO_FREQ_HZ = 500_000_000  # 500 MHz nominal DCO frequency (default for 8A3400x)
 
 
 # ---------- Utility for running shell commands ----------
@@ -14,6 +18,20 @@ def run(cmd, dry_run: bool = False):
     print("RUN:", " ".join(cmd))
     if not dry_run:
         subprocess.run(cmd, check=True)
+
+
+# Helper: User (Rear) vs HW (Front) mapping for logging
+def get_user_sma_name(hw_name: str) -> str:
+    # HW SMA1 <-> User SMA4
+    # HW SMA2 <-> User SMA3
+    # HW SMA3 <-> User SMA2
+    # HW SMA4 <-> User SMA1
+    if hw_name == "SMA1": return "User SMA4"
+    if hw_name == "SMA2": return "User SMA3"
+    if hw_name == "SMA3": return "User SMA2"
+    if hw_name == "SMA4": return "User SMA1"
+    return hw_name
+
 
 
 # ---------- Mapping: logical source name -> DPLL input index ----------
@@ -106,9 +124,9 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
     Multiplexer layers (board-level, not inside the DPLL):
 
     1. SMA-side muxes:
-        SMA1 -> GPS 1PPS direct OR to DPLL IN1 OR from DPLL OUT2
+        SMA1 -> GPS 1PPS direct OR to DPLL IN1 OR from DPLL Q11 (Ch6 1PPS)
         SMA2 -> CM4 1PPS direct OR to DPLL IN2 OR from DPLL OUT3
-        SMA3 -> to DPLL IN3 OR from DPLL OUT4
+        SMA3 -> to DPLL IN3 OR from DPLL Q9 (Ch5 frequency-only)
         SMA4 -> fixed to DPLL IN4 (no mux)
 
     2. DPLL-input-side muxes:
@@ -117,8 +135,17 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
         DPLL IN3 -> SMA3 path OR GPS 1PPS path
         DPLL IN4 -> SMA4 path (fixed)
 
-    3. OUT2 destination:
-        DPLL OUT2 -> SMA1 path OR CM4 PPS
+    3. 1PPS destination (Q11, Channel 6):
+        DPLL Q11 -> SMA1 path OR CM4 PPS
+
+    4. Frequency output (Q9, Channel 5):
+        DPLL Q9 -> SMA3 (frequency-only, phase-locked to SyncE)
+
+    NOTE: V6 board change - Q9 and Q11 swapped:
+      - Q9 (Ch5): now drives SMA3 for frequency output (SyncE aligned)
+      - Q11 (Ch6): now drives CM4 1PPS / SMA1 for phase output
+      This separates SyncE frequency from 1PPS phase alignment,
+      allowing large phase jumps on Ch6 without disturbing SyncE 25MHz.
 
     This function decides all of that based on:
       - cfg.ptp_role (GM / CLIENT / NONE)
@@ -140,12 +167,13 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
     sma1_cfg = next(s for s in cfg.smas if s.name == "SMA1")
 
     if ptp_role == PtpRole.GM:
-        # CM4 is GM: DPLL OUT2 should go TO CM4 1PPS input.
+        # CM4 is GM: DPLL Q11 (Ch6 1PPS) should go TO CM4 1PPS input.
         # CM4 multiplexer, output 1, CM4_MUX_SEL[1:0] = 2'b00
-        print("CM4 is PTP GM: route DPLL OUT2 -> CM4 1PPS input")
+        print("CM4 is PTP GM: route DPLL Q11 (Ch6 1PPS) -> CM4 1PPS input")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "10=0", "11=0"], dry_run=dry_run)
-        # Enable DPLL Q9P (1PPS) to go to CM4 (16=1, your note)
-        print("Setup DPLL Q9P (1pps) to go to CM4")
+        # V6: Enable DPLL Q11 (Ch6 1PPS) to go to CM4 (was Q9 in V5)
+        # Q11 is now the 1PPS output, Q9 is frequency-only for SMA3
+        print("Setup DPLL Q11 (Ch6 1pps) to go to CM4")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "16=1"], dry_run=dry_run)
         # enable CLK0N to come from SMA2
         print(f"Setup CLK0N to potentially come from SMA2")
@@ -158,8 +186,8 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
         # 14=1: enable CM4 PPS path towards DPLL IN2 (per your comment)
         print("Setup CLK0N to potentially come from CM4")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "14=1"], dry_run=dry_run)
-        # enable Q9_P to go to SMA1 otherwise
-        print("Setup Q9_P to potentially go to SMA1")
+        # V6: enable Q11 (Ch6 1PPS) to go to SMA1 otherwise (was Q9 in V5)
+        print(f"Setup Q11 (Ch6 1PPS) to potentially go to SMA1 ({get_user_sma_name('SMA1')})")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "16=0"], dry_run=dry_run)
 
     # ----------------------------------------------------------------------
@@ -168,10 +196,15 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
     print("Route M.2 1PPS to DPLL by default (output 1, M2_MUX_SEL=00)")
     run(["gpioset", "-t", "0", "-c", "gpiochip2", "6=0", "7=0"], dry_run=dry_run)
     
-    print("Route DPLL Q10P to SMA2 by default")
+    print(f"Route DPLL Q10P to SMA2 ({get_user_sma_name('SMA2')}) by default")
     run(["gpioset", "-t", "0", "-c", "gpiochip2", "17=0"], dry_run=dry_run)
 
-    print("Route DPLL CLK1N to SMA4 by default")
+    # V6: Q9 (Ch5) now drives SMA3 for frequency output (SyncE aligned)
+    # This is frequency-only output, phase-locked to SyncE channel
+    print(f"V6: Route DPLL Q9 (Ch5 freq) to SMA3 ({get_user_sma_name('SMA3')}) by default")
+    # (GPIO routing for Q9->SMA3 is typically handled by SMA3 mux below)
+
+    print(f"Route DPLL CLK1N to SMA4 ({get_user_sma_name('SMA4')}) by default")
     run(["gpioset", "-t", "0", "-c", "gpiochip2", "15=0"], dry_run=dry_run)
 
     # ----------------------------------------------------------------------
@@ -191,49 +224,51 @@ def configure_muxes(cfg: TimingConfig, dry_run: bool = False):
     #    SMA3_MUX_SEL[1:0] on lines 4,5
     #      00 -> 'unused'/float
     #      10 -> SMA3 -> DPLL IN3
-    #      11 -> DPLL OUT4 -> SMA3
+    #      11 -> DPLL Q9 (Ch5 freq) -> SMA3 (V6: frequency-only output, SyncE aligned)
     # ----------------------------------------------------------------------
 
     # --- SMA1 front-end mux ---
     if sma1_cfg.direction == "INPUT":
         # Route SMA1 -> DPLL IN1 , output 3 , SMA1_MUX_SEL[1:0] = 2'b10
-        print("SMA1 as INPUT: route SMA1 -> DPLL IN1")
+        print(f"SMA1 ({get_user_sma_name('SMA1')}) as INPUT: route SMA1 -> DPLL IN1")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "0=0", "1=1"], dry_run=dry_run)
     elif sma1_cfg.direction == "OUTPUT":
         # Route DPLL OUT2 -> SMA1 , output 2, SMA1_MUX_SEL[1:0] = 2'b01
-        print("SMA1 as OUTPUT: route DPLL OUT2 -> SMA1")
+        print(f"SMA1 ({get_user_sma_name('SMA1')}) as OUTPUT: route DPLL OUT2 -> SMA1")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "0=1", "1=0"], dry_run=dry_run)
     else:
         # UNUSED:
         # If GPS is present and configured, we can use the "third" state as GPS->SMA1 (11),
         # otherwise leave it floating (00).
-        print("SMA1 UNUSED: floating/unused (SMA1_MUX_SEL=00)")
+        print(f"SMA1 ({get_user_sma_name('SMA1')}) UNUSED: floating/unused (SMA1_MUX_SEL=00)")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "0=0", "1=0"], dry_run=dry_run)
 
     # --- SMA2 front-end mux ---
     sma2_cfg = next(s for s in cfg.smas if s.name == "SMA2")
     if sma2_cfg.direction == "INPUT":
         # SMA2 as input to DPLL IN2 , output 3, SMA2_MUX_SEL[1:0] = 2'b10
-        print("SMA2 as INPUT: route SMA2 -> DPLL IN2")
+        print(f"SMA2 ({get_user_sma_name('SMA2')}) as INPUT: route SMA2 -> DPLL IN2")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "2=0", "3=1"], dry_run=dry_run)
     elif sma2_cfg.direction == "OUTPUT":
         # DPLL OUT3 -> SMA2 , output 2, SMA2_MUX_SEL[1:0] = 2'b01
-        print("SMA2 as OUTPUT: route DPLL OUT3 -> SMA2")
+        print(f"SMA2 ({get_user_sma_name('SMA2')}) as OUTPUT: route DPLL OUT3 -> SMA2")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "2=1", "3=0"], dry_run=dry_run)
     else:
         # UNUSED: route to unused / floating, output 1, SMA2_MUX_SEL[1:0] = 2'b00
-        print("SMA2 UNUSED: floating/unused (SMA2_MUX_SEL=00)")
+        print(f"SMA2 ({get_user_sma_name('SMA2')}) UNUSED: floating/unused (SMA2_MUX_SEL=00)")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "2=0", "3=0"], dry_run=dry_run)
 
     # --- SMA3 front-end mux ---
     sma3_cfg = next(s for s in cfg.smas if s.name == "SMA3")
     if sma3_cfg.direction == "INPUT":
         # SMA3 as input to DPLL IN3, output 3, SMA3_MUX_SEL[1:0] = 2'b10
-        print("SMA3 as INPUT: route SMA3 -> DPLL IN3")
+        print(f"SMA3 ({get_user_sma_name('SMA3')}) as INPUT: route SMA3 -> DPLL IN3")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "4=0", "5=1"], dry_run=dry_run)
     elif sma3_cfg.direction == "OUTPUT":
-        # DPLL OUT4 -> SMA3, output 4, SMA3_MUX_SEL[1:0] = 2'b11
-        print("SMA3 as OUTPUT: route DPLL OUT4 -> SMA3")
+        # V6: DPLL Q9 (Ch5 freq) -> SMA3, SMA3_MUX_SEL[1:0] = 2'b11
+        # Note: SMA3 output is FREQUENCY-ONLY (phase-locked to SyncE channel)
+        # Phase adjustments happen on Ch6, not Ch5, so SyncE alignment is preserved
+        print("SMA3 as OUTPUT: route DPLL Q9 (Ch5 freq-only) -> SMA3")
         run(["gpioset", "-t", "0", "-c", "gpiochip2", "4=1", "5=1"], dry_run=dry_run)
     else:
         # UNUSED: floating, output 1, SMA3_MUX_SEL[1:0] = 2'b00
@@ -378,54 +413,104 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
         run(["dplltool", "set-input-freq", str(phys_idx), str(freq_hz)], dry_run=dry_run)
         return logical_idx
 
-    # Build mapping: source_name -> (logical_input_idx, role)
-    src_to_input: Dict[str, Tuple[int, TimeFreqRole]] = {}
-
-    # Collect from both channel2 and time channels (so we don't miss any)
-    for src in plan.channel2_inputs + plan.time_channel_inputs:
-        if src.name not in src_to_input:
-            idx = register_source_input(src.name, src.role)
-            src_to_input[src.name] = (idx, src.role)
+    # Collect unique sources from both lists to register them
+    unique_sources: Dict[str, Tuple[int, TimeFreqRole]] = {} # name -> (idx, role)
+    
+    # We aggregate both lists to ensure we register every source used in the plan
+    all_plan_inputs = plan.channel5_inputs + plan.channel6_inputs
+    
+    for src in all_plan_inputs:
+        if src.name not in unique_sources:
+            # Register this source's physical input frequency
+            idx_logic = register_source_input(src.name, src.role)
+            unique_sources[src.name] = (idx_logic, src.role)
 
     # ------------------------------------------------------------------
-    # Channel 2 (frequency DPLL) input priority list
+    # Channel 5 (Frequency DPLL) input priority list
     # ------------------------------------------------------------------
-    for src in plan.channel2_inputs:
-        logical_idx, _ = src_to_input[src.name]  # logical 1..4
+    for src in plan.channel5_inputs:
+        logical_idx, _ = unique_sources[src.name]
         phys_idx = logical_to_physical_input_idx(logical_idx)
 
-        # Plan uses 0-based priority (0 = highest); DPLL expects 0-based
+        # Plan uses 1-based priority in config, but we pass it as-is? 
+        # Wait, the comment says: "Priorities from derive_plan() are 1-based... DPLL wants 0-based"
+        # But `derive_plan` might be producing 0-based now?
+        # Let's stick to the existing code's assumption that src.priority is what we want,
+        # or maybe we need to be careful.
+        # Looking at config.py wizard: "GPS priority (0 = highest) [0]" 
+        # So priorities are 0-based integers.
+        # The existing code had `if prio_hw < 0: prio_hw = 0`.
+        
         prio_hw = src.priority
         if prio_hw < 0:
             prio_hw = 0
 
         run([
             "dplltool", "set-chan-input",
-            "2",                   # Channel 2
+            "5",                   # Channel 5 (Freq)
             str(phys_idx),
             str(prio_hw),
             "enable",
         ], dry_run=dry_run)
 
     # ------------------------------------------------------------------
-    # Time channels (5 & 6) input priority list
+    # Channel 6 (Time/1PPS DPLL) input priority list
     # ------------------------------------------------------------------
-    for src in plan.time_channel_inputs:
-        logical_idx, _ = src_to_input[src.name]
+    for src in plan.channel6_inputs:
+        logical_idx, _ = unique_sources[src.name]
         phys_idx = logical_to_physical_input_idx(logical_idx)
 
-        prio_hw = src.priority 
+        prio_hw = src.priority
         if prio_hw < 0:
             prio_hw = 0
 
-        for chan in (5, 6):
-            run([
-                "dplltool", "set-chan-input",
-                str(chan),
-                str(phys_idx),
-                str(prio_hw),
-                "enable",
-            ], dry_run=dry_run)
+        run([
+            "dplltool", "set-chan-input",
+            "6",                   # Channel 6 (Time)
+            str(phys_idx),
+            str(prio_hw),
+            "enable",
+        ], dry_run=dry_run)
+
+    # ------------------------------------------------------------------
+    # Combo Bus Slaving Logic
+    # ------------------------------------------------------------------
+    # Rule 1: If we have FREQ_ONLY sources (SyncE, SMA 10MHz), they are on Channel 5.
+    #         Channel 5 is the Frequency Master. Channel 6 slaves to Channel 5.
+    # Rule 2: If we have NO FREQ_ONLY sources, but we have TIME sources (GPS, PTP, SMA 1PPS),
+    #         they are on Channel 6.
+    #         Channel 6 is the Master (it has the references). Channel 5 slaves to Channel 6
+    #         to provide SyncE/10MHz outputs derived from the Time source.
+    # ------------------------------------------------------------------
+    
+    # Check for presence of FREQ_ONLY sources in Channel 5's plan
+    # Compare enum-to-enum (InputSource.role is a TimeFreqRole enum, not a string)
+    has_freq_only_source = any(s.role == TimeFreqRole.FREQ_ONLY for s in plan.channel5_inputs)
+    
+    # Check for any source on Channel 6 (Time/1PPS)
+    has_time_source = len(plan.channel6_inputs) > 0
+
+    if has_freq_only_source:
+        # Scenario A: Precise Frequency Source Available (SyncE/10MHz) -> Ch5 Master
+        print("\nCombo Bus Strategy: Freq Master detected (Ch5). Ch6 will slave to Ch5.")
+        # Enable Ch6 -> Ch5
+        configure_combo_slaving(slave=6, master=5, enable=True, dry_run=dry_run)
+        # Disable Ch5 -> Ch6 (prevent loop)
+        configure_combo_slaving(slave=5, master=6, enable=False, dry_run=dry_run)
+
+    elif has_time_source:
+        # Scenario B: No Freq Source, but Time Source Available (GPS/PTP) -> Ch6 Master
+        print("\nCombo Bus Strategy: Only Time/GPS sources detected. Ch5 will slave to Ch6.")
+        # Enable Ch5 -> Ch6
+        configure_combo_slaving(slave=5, master=6, enable=True, dry_run=dry_run)
+        # Disable Ch6 -> Ch5 (prevent loop)
+        configure_combo_slaving(slave=6, master=5, enable=False, dry_run=dry_run)
+
+    else:
+        # Scenario C: No sources at all?
+        print("\nCombo Bus Strategy: No active sources. Disabling combo bus.")
+        configure_combo_slaving(slave=6, master=5, enable=False, dry_run=dry_run)
+        configure_combo_slaving(slave=5, master=6, enable=False, dry_run=dry_run)
 
     # ------------------------------------------------------------------
     # Explicitly enable / disable each DPLL input pin
@@ -465,59 +550,125 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
 
 
 
+
+# ---------- Helper: Configure SMA Output Divider ----------
+def configure_sma_output_divider(output_idx: int, target_hz: int, dry_run: bool = False):
+    """
+    Calculate and apply the integer output divider for a given output index.
+    Divider = DCO_FREQ_HZ / target_hz
+    """
+    if target_hz <= 0:
+        print(f"Skipping output divider for {output_idx}: invalid target {target_hz} Hz")
+        return
+
+    divider = round(DCO_FREQ_HZ / target_hz)
+    
+    # Sanity checks
+    if divider < 1: divider = 1
+    if divider > 0xFFFFFFFF:
+        print(f"WARNING: Calculated divider {divider} for {target_hz}Hz exceeds 32-bit limit!")
+        divider = 0xFFFFFFFF
+
+    actual_hz = DCO_FREQ_HZ / divider
+    error_ppm = ((actual_hz - target_hz) / target_hz) * 1e6
+    
+    print(f"Configuring Output {output_idx} for {target_hz} Hz:")
+    print(f"  DCO={DCO_FREQ_HZ} Hz, Divider={divider}")
+    print(f"  Actual={actual_hz:.3f} Hz, Error={error_ppm:.3f} ppm")
+
+    if abs(error_ppm) > 100:
+        print("  WARNING: Large frequency error due to integer division!")
+
+    run(["dplltool", "set-output-divider", str(output_idx), str(divider)], dry_run=dry_run)
+
+
+# ---------- Helper: Configure Combo Bus Slaving ----------
+def configure_combo_slaving(slave: int, master: int, enable: bool, dry_run: bool = False):
+    """
+    Configure a DPLL channel (slave) to track another channel (master) via Combo Bus.
+    """
+    state = "enable" if enable else "disable"
+    print(f"Configuring Combo Bus: Channel {slave} slaves to Channel {master} -> {state}")
+    run(["dplltool", "set-combo-slave", str(slave), str(master), state], dry_run=dry_run)
+
+
 # ---------- Configure DPLL outputs (frequencies and routing) ----------
 def configure_dpll_outputs(cfg: TimingConfig, dry_run: bool = False):
     """
-    Configure DPLL outputs 3 and 4 based on SMA OUTPUT config.
+    Configure DPLL Q10 and Q11 output frequencies based on SMA OUTPUT config.
 
-    Board mapping recap:
-      - DPLL OUT2: fixed 1 Hz (1PPS) for CM4/SMA1 (configured elsewhere / statically)
-      - DPLL OUT3: drives SMA2
-      - DPLL OUT4: drives SMA3
-      - SMA4: no output path
+    V6 Board Output Mapping:
+      - DPLL Q9 (Ch5): Fixed 10MHz → SMA3 (frequency-only, SyncE aligned)
+        * Configured in TCS/EEPROM, NOT via dplltool set-output-freq
+      - DPLL Q10: → SMA2 (user-configurable frequency, no restrictions)
+      - DPLL Q11 (Ch6): → CM4/SMA1 (phase-aligned output)
+        * In GM mode: must be 1PPS (CM4 needs 1PPS input for disciplining)
+        * In CLIENT/NONE mode: user-configurable frequency for SMA1
 
-    With the new dplltool CLI, set-output-freq always sets OUT3 and OUT4 together:
-      dplltool set-output-freq <freq3_hz> <freq4_hz>
+    dplltool set-output-freq <q10_hz> <q11_hz> sets Q10 and Q11 together.
     """
 
     ptp_role = PtpRole(cfg.ptp_role)
 
-    # --- OUT3 → SMA2 ---
+    # --- Q10 → SMA2 (user-configurable, no restrictions) ---
     sma2_cfg = next(s for s in cfg.smas if s.name == "SMA2")
     if sma2_cfg.direction == "OUTPUT" and sma2_cfg.frequency_hz is not None:
-        out3_hz = float(sma2_cfg.frequency_hz)
+        q10_hz = float(sma2_cfg.frequency_hz)
     else:
-        out3_hz = None  # not being driven / leave at default
+        q10_hz = None  # not being driven / leave at default
 
-    # --- OUT4 → SMA3 ---
+    # --- Q11 (Ch6) → CM4/SMA1 ---
+    # In GM mode: Q11 goes to CM4 and MUST be 1PPS for CM4 clock disciplining
+    # In CLIENT/NONE mode: Q11 can go to SMA1 with user-configurable frequency
+    sma1_cfg = next(s for s in cfg.smas if s.name == "SMA1")
+    
+    if ptp_role == PtpRole.GM:
+        # CM4 is GM: Q11 feeds CM4 1PPS input, must be 1PPS
+        q11_hz = 1.0
+        print("PTP GM mode: Q11 forced to 1PPS for CM4 1PPS input")
+    elif sma1_cfg.direction == "OUTPUT" and sma1_cfg.frequency_hz is not None:
+        # CLIENT/NONE mode: Q11 goes to SMA1, use configured frequency
+        q11_hz = float(sma1_cfg.frequency_hz)
+    else:
+        # Default to 1PPS if SMA1 not configured as output
+        q11_hz = 1.0
+
+    # --- Q9 (Ch5) → SMA3 ---
+    # Q9 is fixed 10MHz in V6, configured via TCS/EEPROM, NOT via dplltool
+    # Just log and warn if user tried to configure SMA3 as OUTPUT
     sma3_cfg = next(s for s in cfg.smas if s.name == "SMA3")
-    if sma3_cfg.direction == "OUTPUT" and sma3_cfg.frequency_hz is not None:
-        out4_hz = float(sma3_cfg.frequency_hz)
-    else:
-        out4_hz = None
+    if sma3_cfg.direction == "OUTPUT":
+        if sma3_cfg.frequency_hz is not None and sma3_cfg.frequency_hz != 10_000_000:
+            print(f"WARNING: SMA3 frequency_hz={sma3_cfg.frequency_hz} is ignored in V6.")
+            print("         Q9 (Ch5) → SMA3 is fixed at 10MHz (configured in TCS/EEPROM).")
+        else:
+            print("SMA3 as OUTPUT: Q9 (Ch5) provides fixed 10MHz (SyncE frequency aligned)")
+        if sma3_cfg.frequency_hz == 1:
+            print("WARNING: SMA3 cannot provide phase-aligned 1PPS in V6.")
+            print("         Use SMA1 for phase-aligned 1PPS output instead.")
 
-    # If neither OUT3 nor OUT4 is used, don't touch them
-    if out3_hz is None and out4_hz is None:
-        return
+    # If Q10 is not being used, default to 1Hz so we can still call set-output-freq
+    if q10_hz is None:
+        q10_hz = 1.0
+        print("Q10 (SMA2) not configured as OUTPUT, defaulting to 1Hz")
 
-    # Decide what to do when only one of them is used.
-    # Easiest: fill the unused one with a safe default (e.g. its nominal/static value).
-    # For now, assume 1 Hz as a harmless placeholder; you can change this to whatever
-    # matches your TCS/EEPROM default for the unused output.
-    if out3_hz is None:
-        out3_hz = 1.0
-    if out4_hz is None:
-        out4_hz = 1.0
+    # Use traditional set-output-freq for Q11 (SMA1) if it's 1PPS or low freq,
+    # but for Q10 (SMA2) which might be high freq, use the new divider method.
+    # Actually, let's use the explicit divider method for ANY user-config frequency
+    # to ensure they get what they asked for (within integer limits).
+    
+    # Q10 (Output 10) -> SMA2
+    if q10_hz is not None:
+        configure_sma_output_divider(10, int(q10_hz), dry_run=dry_run)
 
-    run(
-        [
-            "dplltool",
-            "set-output-freq",
-            str(out3_hz),
-            str(out4_hz),
-        ],
-        dry_run=dry_run,
-    )
+    # Q11 (Output 11) -> SMA1 / CM4
+    if q11_hz is not None:
+        # If it is 1.0 Hz, we can still use the divider method (2.5G div)
+        configure_sma_output_divider(11, int(q11_hz), dry_run=dry_run)
+
+    # We skip calling "set-output-freq" (legacy helper) because it sets both Q10/Q11 
+    # and might override our precise divider settings with its own internal logic.
+    # The new dplltool commands handles them individually.
 
 
 # ---------- High-level apply function ----------

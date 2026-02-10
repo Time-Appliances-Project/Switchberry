@@ -18,6 +18,7 @@ class TimeFreqRole(Enum):
     TIME_ONLY = "TIME_ONLY"
     FREQ_ONLY = "FREQ_ONLY"
     TIME_AND_FREQ = "TIME_AND_FREQ"
+    NONE = "NONE"
 
 
 class SmaDirection(Enum):
@@ -118,29 +119,41 @@ class InputSource:
 
 @dataclass
 class DerivedPlan:
-    channel2_inputs: List[InputSource]     # frequency DPLL (ch2)
-    time_channel_inputs: List[InputSource] # common list for channels 5 & 6
+    """
+    V6 DPLL Channel Architecture:
+      - Channel 5: FREQUENCY DPLL - locks to SyncE or frequency inputs (FREQ_ONLY sources)
+                   Also handles TIME_AND_FREQ sources (combined time+freq reference)
+      - Channel 6: TIME/1PPS DPLL - locks to 1PPS sources (TIME_ONLY)
+                   Combo bus slave of Channel 5 for frequency tracking
+      - Channel 2: Not used in the V6 timing path (legacy, not configured by this tool)
+
+    Q9 (on Ch5) drives SMA3 at fixed 10MHz.
+    Q11 (on Ch6) drives CM4 1PPS (GM mode) or SMA1 (CLIENT mode).
+    """
+    channel5_inputs: List[InputSource]     # frequency DPLL (Ch5) - SyncE, FREQ_ONLY, or TIME_AND_FREQ
+    channel6_inputs: List[InputSource]     # time/1PPS DPLL (Ch6) - TIME_ONLY, combo bus slave of Ch5
     warnings: List[str]
     errors: List[str]
 
 
 def derive_plan(cfg: TimingConfig) -> DerivedPlan:
     """
-    Rules:
+    Derives the V6 DPLL Input Plan.
 
-      - Channel 2 is the FREQUENCY DPLL.
-      - Channels 5 & 6 are TIME/TOD (1PPS) consumers.
+    V6 Architecture:
+      - Channel 5 (Frequency): Locks ONLY to dedicated frequency sources.
+          * FREQ_ONLY (e.g. SyncE, SMA with 10MHz)
+          * If no FREQ_ONLY sources exist, Ch5 gets frequency via Combo Bus from Ch6.
+      - Channel 6 (Time): Locks to any source providing 1PPS/Time.
+          * TIME_AND_FREQ (e.g. GPS) - provides BOTH time and frequency to Ch6
+          * TIME_ONLY (e.g. SMA with 1PPS)
+      - Combo Bus direction is determined by apply_timing.py based on which channel
+        has direct inputs.
 
-      - If any input (incl. GPS) is TIME_AND_FREQ:
-          * Disable channel 2 input list (ch2 follows 5 & 6 via combo bus).
-          * TIME_AND_FREQ inputs go into the time-channel priority list.
-
-      - If any input is FREQ_ONLY:
-          * They feed channel 2 input priority list (only if no TIME_AND_FREQ).
-
-      - If any input is TIME_ONLY:
-          * They go into the time-channel priority list.
-          * If there is no frequency source at all, warn.
+    Logic:
+      1. channel5_inputs = FREQ_ONLY only
+      2. channel6_inputs = TIME_AND_FREQ + TIME_ONLY
+      3. Sort both lists by priority (0=highest).
     """
 
     warnings: List[str] = []
@@ -152,99 +165,83 @@ def derive_plan(cfg: TimingConfig) -> DerivedPlan:
     inputs: List[InputSource] = []
 
     # GPS
-    if cfg.gps.present and cfg.gps.role is not None:
-        inputs.append(
-            InputSource(
-                name="GPS",
-                role=TimeFreqRole(cfg.gps.role),
-                priority=cfg.gps.priority if cfg.gps.priority is not None else 999,
-            )
-        )
+    if cfg.gps.present:
+        # Default GPS priority=1 if not set
+        prio = cfg.gps.priority if cfg.gps.priority is not None else 1
+        role_enum = TimeFreqRole(cfg.gps.role)
+        # Check explicit valid values
+        if role_enum == TimeFreqRole.NONE:
+            pass  # GPS present but role=NONE -> ignore
+        else:
+            inputs.append(InputSource(name="GPS", role=role_enum, priority=prio))
 
-    # CM4 (when used as source, usually CLIENT or NONE)
-    if cfg.cm4.used_as_source and cfg.cm4.role is not None:
-        inputs.append(
-            InputSource(
-                name="CM4",
-                role=TimeFreqRole(cfg.cm4.role),
-                priority=cfg.cm4.priority if cfg.cm4.priority is not None else 999,
-            )
-        )
+    # CM4
+    if cfg.cm4.used_as_source:
+        prio = cfg.cm4.priority if cfg.cm4.priority is not None else 2
+        role_enum = TimeFreqRole(cfg.cm4.role)
+        if role_enum != TimeFreqRole.NONE:
+            inputs.append(InputSource(name="CM4", role=role_enum, priority=prio))
 
-    # SyncE (frequency only)
+    # SyncE (Freq only)
     if cfg.synce.used_as_source:
-        prio = cfg.synce.priority if cfg.synce.priority is not None else 999
-        inputs.append(
-            InputSource(
-                name="SYNC_E",
-                role=TimeFreqRole.FREQ_ONLY,
-                priority=prio,
-            )
-        )
+        prio = cfg.synce.priority if cfg.synce.priority is not None else 3
+        inputs.append(InputSource(name="SYNC_E", role=TimeFreqRole.FREQ_ONLY, priority=prio))
 
-    # SMA inputs
+    # SMA Inputs
     for sma in cfg.smas:
         if sma.direction == SmaDirection.INPUT.value:
-            if sma.role is None or sma.priority is None:
-                errors.append(f"{sma.name} is INPUT but role/priority is missing.")
+            # Must have priority
+            if sma.priority is None:
+                warnings.append(f"{sma.name} is INPUT but priority is not set. Ignoring.")
                 continue
-            inputs.append(
-                InputSource(
-                    name=sma.name,
-                    role=TimeFreqRole(sma.role),
-                    priority=sma.priority,
-                )
-            )
+            
+            # Must have role
+            if sma.role is None:
+                warnings.append(f"{sma.name} is INPUT but role is not set. Ignoring.")
+                continue
 
-    # Partition by role
+            r = TimeFreqRole(sma.role)
+            inputs.append(InputSource(name=sma.name, role=r, priority=sma.priority))
+
+
+    # Setup source categories
     time_freq_sources = [s for s in inputs if s.role == TimeFreqRole.TIME_AND_FREQ]
     freq_only_sources = [s for s in inputs if s.role == TimeFreqRole.FREQ_ONLY]
     time_only_sources = [s for s in inputs if s.role == TimeFreqRole.TIME_ONLY]
 
-    # Sort each by priority (ascending = higher priority)
-    time_freq_sources.sort(key=lambda s: s.priority)
-    freq_only_sources.sort(key=lambda s: s.priority)
-    time_only_sources.sort(key=lambda s: s.priority)
+    # V6 Logic: Populating Channel 5 (Freq) and Channel 6 (Time)
+    channel5_inputs: List[InputSource] = []
+    channel6_inputs: List[InputSource] = []
 
-    channel2_inputs: List[InputSource] = []
-    time_channel_inputs: List[InputSource] = []
+    # Channel 5 takes ONLY dedicated frequency sources (FREQ_ONLY)
+    # TIME_AND_FREQ sources (like GPS) go to Channel 6 only;
+    # Channel 5 gets frequency from Channel 6 via Combo Bus in that case.
+    channel5_inputs.extend(freq_only_sources)
+    channel5_inputs.sort(key=lambda s: s.priority)
 
-    # 1) TIME_AND_FREQ exists -> channel 2 follows time channels
-    if time_freq_sources:
-        channel2_inputs = []  # disabled explicitly
-        time_channel_inputs.extend(time_freq_sources)
-        if freq_only_sources:
-            warnings.append(
-                "TIME_AND_FREQ sources present: DPLL channel 2 input list is disabled; "
-                "frequency-only sources will not feed channel 2 in this plan. "
-                "If you want channel 2 to use external FREQ_ONLY refs, set your "
-                "TIME_AND_FREQ sources (e.g. GPS) to TIME_ONLY."
-            )
-    else:
-        # 2) No TIME_AND_FREQ -> FREQ_ONLY feeds channel 2
-        channel2_inputs.extend(freq_only_sources)
-
-    # 3) TIME_ONLY sources -> time channels (5 & 6)
-    time_channel_inputs.extend(time_only_sources)
-    time_channel_inputs.sort(key=lambda s: s.priority)
+    # Channel 6 takes anything with Time
+    channel6_inputs.extend(time_freq_sources)
+    channel6_inputs.extend(time_only_sources)
+    channel6_inputs.sort(key=lambda s: s.priority)
 
     # Sanity checks
-    # a) GM must have at least one time source
-    if ptp_role == PtpRole.GM and not time_channel_inputs:
+    
+    # a) GM must have at least one time source (Ch6)
+    if ptp_role == PtpRole.GM and not channel6_inputs:
         errors.append(
             "CM4 is configured as PTP GM, but there are no TIME or TIME_AND_FREQ sources "
-            "assigned to the time channels (5 & 6)."
+            "for Channel 6 (Time/1PPS)."
         )
 
-    # b) TIME_ONLY but no frequency source at all
-    has_any_freq_source = bool(time_freq_sources or freq_only_sources)
-    if time_only_sources and not has_any_freq_source:
+    # b) If we have Time sources but no Frequency sources, Ch5 is empty.
+    #    This is OK - Ch5 will get frequency via Combo Bus from Ch6.
+    if channel6_inputs and not channel5_inputs:
         warnings.append(
-            "There are TIME_ONLY sources but no TIME_AND_FREQ or FREQ_ONLY sources. "
-            "DPLL channel 2 will have no explicit frequency reference and may free-run."
+            "Channel 5 (Freq) has no direct inputs. It will get frequency "
+            "via Combo Bus from Channel 6 (Time)."
         )
 
-    # c) Check duplicate priorities per role set
+    # c) Check duplicate priorities per lists
     def find_duplicate_priorities(sources: List[InputSource], label: str):
         seen: Dict[int, List[str]] = {}
         for s in sources:
@@ -255,9 +252,8 @@ def derive_plan(cfg: TimingConfig) -> DerivedPlan:
                     f"{label}: multiple sources share priority {prio}: {', '.join(names)}."
                 )
 
-    find_duplicate_priorities(time_freq_sources, "TIME_AND_FREQ inputs")
-    find_duplicate_priorities(freq_only_sources, "FREQ_ONLY inputs")
-    find_duplicate_priorities(time_only_sources, "TIME_ONLY inputs")
+    find_duplicate_priorities(channel5_inputs, "Channel 5 (Freq) inputs")
+    find_duplicate_priorities(channel6_inputs, "Channel 6 (Time) inputs")
 
     # d) SMA consistency checks + special SMA1 rules
     for sma in cfg.smas:
@@ -276,7 +272,19 @@ def derive_plan(cfg: TimingConfig) -> DerivedPlan:
                         "hardware only supports 1PPS on SMA1. Treating SMA1 as 1PPS."
                     )
             else:
-                if sma.frequency_hz is None:
+                # V6: SMA3 is on Q9/Ch5 (Frequency only)
+                if sma.name == "SMA3":
+                    # Warn if user tries to set 1PPS, as it won't be phase-aligned
+                    if sma.frequency_hz == 1:
+                        warnings.append(
+                            "SMA3 is driven by Channel 5 (Freq DPLL) and cannot provide "
+                            "phase-aligned 1PPS. Use SMA1 for phase-aligned 1PPS."
+                        )
+                    # We no longer force 10MHz, so we don't warn about "ignored" config.
+                    # But we can warn that it is integer-divided from DCO.
+                    pass
+
+                elif sma.frequency_hz is None:
                     warnings.append(
                         f"{sma.name}: OUTPUT selected but frequency_hz is not set."
                     )
@@ -288,23 +296,50 @@ def derive_plan(cfg: TimingConfig) -> DerivedPlan:
                 )
 
     return DerivedPlan(
-        channel2_inputs=channel2_inputs,
-        time_channel_inputs=time_channel_inputs,
+        channel5_inputs=channel5_inputs,
+        channel6_inputs=channel6_inputs,
         warnings=warnings,
         errors=errors,
     )
 
 
+# ---------- SMA Mapping Helpers ----------
+
+def hw_to_user_sma(hw_name: str) -> str:
+    """
+    Maps Hardware SMA name (Schematic/Front-Panel) to User SMA name (Rear-Panel).
+    Mapping (V6):
+      HW SMA1 <-> User SMA4
+      HW SMA2 <-> User SMA3
+      HW SMA3 <-> User SMA2
+      HW SMA4 <-> User SMA1
+    
+    Formula: User# = 5 - HW#
+    """
+    try:
+        hw_num = int(hw_name.replace("SMA", ""))
+        user_num = 5 - hw_num
+        return f"SMA{user_num}"
+    except ValueError:
+        return hw_name
+
+def user_to_hw_sma(user_name: str) -> str:
+    """
+    Maps User SMA name (Rear-Panel) to Hardware SMA name.
+    """
+    try:
+        user_num = int(user_name.replace("SMA", ""))
+        hw_num = 5 - user_num
+        return f"SMA{hw_num}"
+    except ValueError:
+        return user_name
+
+
 def validate_config(cfg: TimingConfig) -> DerivedPlan:
     plan = derive_plan(cfg)
-
-    # If any TIME_AND_FREQ source exists, channel 2 is not used in this plan.
-    has_time_and_freq = any(
-        s.role == TimeFreqRole.TIME_AND_FREQ for s in plan.time_channel_inputs
-    )
+    ptp_role = PtpRole(cfg.ptp_role)
 
     # Track whether the user configured any FREQ_ONLY sources in the *config*
-    # (these may be ignored if TIME_AND_FREQ is present).
     configured_freq_only = []
 
     if cfg.synce.used_as_source:
@@ -314,7 +349,7 @@ def validate_config(cfg: TimingConfig) -> DerivedPlan:
         if sma.direction == SmaDirection.INPUT.value and sma.role == TimeFreqRole.FREQ_ONLY.value:
             configured_freq_only.append(sma.name)
 
-    print("=== Derived 8A34004 DPLL Plan ===")
+    print("=== Derived 8A34004 DPLL Plan (V6 Architecture) ===")
     print(f"PTP role: {cfg.ptp_role}")
 
     # ---- SyncE summary ----
@@ -332,55 +367,65 @@ def validate_config(cfg: TimingConfig) -> DerivedPlan:
 
     # ---- High-level mode note ----
     print("\nDPLL mode summary:")
-    if has_time_and_freq:
-        print("  TIME_AND_FREQ source present -> combined time+frequency mode.")
-        print("  Channels 5 & 6 lock to the TIME_AND_FREQ source(s) for phase/time,")
-        print("  and frequency tracking is derived internally from that same reference.")
-        print("  Channel 2 is NOT used as an external frequency lock point in this mode.")
-        if configured_freq_only:
-            print("  NOTE: FREQ_ONLY sources are configured but ignored while TIME_AND_FREQ is present.")
-            print("        To use channel 2 with external frequency (e.g. SyncE), set time sources to TIME_ONLY.")
+    print("  Channel 5 (Frequency DPLL): Locks to FREQ_ONLY sources (SyncE, 10MHz).")
+    print("  Channel 6 (Time/1PPS DPLL): Locks to TIME_AND_FREQ and TIME_ONLY sources.")
+    if plan.channel5_inputs:
+        print("  Combo Bus: Channel 6 slaves to Channel 5 (Freq Master).")
+    elif plan.channel6_inputs:
+        print("  Combo Bus: Channel 5 slaves to Channel 6 (Time Master, no direct freq source).")
     else:
-        print("  No TIME_AND_FREQ sources -> split time/frequency mode.")
-        print("  Channels 5 & 6 lock to the time source(s) (TIME_ONLY).")
-        if plan.channel2_inputs:
-            print("  Channel 2 locks to frequency-only source(s) (FREQ_ONLY), and can provide frequency")
-            print("  tracking to channels 5 & 6 via the internal combo bus.")
-        else:
-            print("  No FREQ_ONLY source configured -> no external frequency lock for channel 2 in this plan.")
-            print("  (System will effectively freerun on the local oscillator unless you add SyncE/FREQ_ONLY input.)")
+        print("  Combo Bus: disabled (no sources).")
 
-    # ---- Channel 2 list ----
-    print("\nChannel 2 (frequency DPLL) input priority list (frequency domain priority):")
-    if has_time_and_freq:
-        print("  (disabled: TIME_AND_FREQ sources present; channel 2 not used as a separate lock point)")
+    # ---- Channel 5 list ----
+    print("\nChannel 5 (Frequency) input priority list:")
+    if plan.channel5_inputs:
+        for s in plan.channel5_inputs:
+            uname = s.name
+            if s.name.startswith("SMA"):
+                uname = f"{s.name} (User {hw_to_user_sma(s.name)})"
+            print(f"  priority {s.priority}: {uname} ({s.role.value})")
     else:
-        if plan.channel2_inputs:
-            for s in plan.channel2_inputs:
-                print(f"  priority {s.priority}: {s.name} ({s.role.value})")
-        else:
-            print("  (no frequency-only sources configured)")
+        print("  (no frequency sources configured)")
 
-    # ---- Channels 5 & 6 list ----
-    print("\nChannels 5 & 6 (time/TOD DPLLs) input priority list (time domain priority):")
-    if plan.time_channel_inputs:
-        for s in plan.time_channel_inputs:
-            print(f"  priority {s.priority}: {s.name} ({s.role.value})")
+    # ---- Channel 6 list ----
+    print("\nChannel 6 (Time/1PPS) input priority list:")
+    if plan.channel6_inputs:
+        for s in plan.channel6_inputs:
+            uname = s.name
+            if s.name.startswith("SMA"):
+                uname = f"{s.name} (User {hw_to_user_sma(s.name)})"
+            print(f"  priority {s.priority}: {uname} ({s.role.value})")
     else:
         print("  (no time sources configured)")
 
     # ---- SMA summary (existing behavior) ----
-    print("\nSMA configuration:")
-    for sma in cfg.smas:
+    print("\nSMA configuration (showing Hardware Names [User Rear Panel Names]):")
+    # Sort for display by User Number (Rear 1..4) implies HW 4..1
+    # Let's just iterate the config list order, but adding User mappings
+    
+    # Actually, let's sort by User Name for approachability
+    sorted_smas = sorted(cfg.smas, key=lambda s: hw_to_user_sma(s.name))
+    
+    for sma in sorted_smas:
+        user_name = hw_to_user_sma(sma.name)
+        label = f"{sma.name} [{user_name}]"
+        
         if sma.direction == SmaDirection.INPUT.value:
-            print(f"  {sma.name}: INPUT, role={sma.role}, priority={sma.priority}, frequency={sma.frequency_hz}")
+            print(f"  {label}: INPUT, role={sma.role}, priority={sma.priority}, frequency={sma.frequency_hz}")
         elif sma.direction == SmaDirection.OUTPUT.value:
             if sma.name == "SMA1":
-                print(f"  {sma.name}: OUTPUT, 1PPS (shares path with CM4 1PPS)")
+                if ptp_role == PtpRole.GM:
+                    print(f"  {label}: OUTPUT, 1PPS (GM mode: Q11 forced to 1PPS for CM4)")
+                else:
+                    print(f"  {label}: OUTPUT, frequency={sma.frequency_hz} Hz (via Q11/Ch6, phase-aligned)")
+            elif sma.name == "SMA2":
+                print(f"  {label}: OUTPUT, frequency={sma.frequency_hz} Hz (via Q10)")
+            elif sma.name == "SMA3":
+                print(f"  {label}: OUTPUT, fixed 10MHz (V6: Q9/Ch5, SyncE freq-aligned - config ignored)")
             else:
-                print(f"  {sma.name}: OUTPUT, frequency={sma.frequency_hz} Hz")
+                print(f"  {label}: OUTPUT, frequency={sma.frequency_hz} Hz")
         else:
-            print(f"  {sma.name}: UNUSED")
+            print(f"  {label}: UNUSED")
 
     if plan.warnings:
         print("\nWarnings:")
@@ -397,8 +442,6 @@ def validate_config(cfg: TimingConfig) -> DerivedPlan:
     return plan
 
 
-
-
 # ---------- Interactive wizard ----------
 
 def run_wizard(path: str) -> None:
@@ -410,22 +453,32 @@ def run_wizard(path: str) -> None:
     print("      * GPS 1PPS, CM4 1PPS, SyncE, SMA inputs")
     print("  - SMA1..SMA4 as inputs or outputs.")
     print()
-    print("Important:")
+    print("Important (V6 Architecture):")
     print("  • The DPLL has separate TIME and FREQUENCY priority lists:")
-    print("      - TIME domain: channels 5 & 6 (1PPS / TOD consumers)")
-    print("      - FREQUENCY domain: channel 2 (frequency DPLL)")
+    print("      - FREQUENCY domain: Channel 5 (SyncE / Frequency inputs)")
+    print("      - TIME domain: Channel 6 (1PPS / TOC inputs)")
+    print("  • Channel 6 is typically frequency-slaved to Channel 5.")
     print("  • Each reference gets a single 'priority' number;")
     print("    that priority is applied to whichever domain(s) it participates in,")
     print("    based on its ROLE:")
-    print("      - TIME_ONLY       → affects time priority only")
-    print("      - FREQ_ONLY       → affects frequency priority only")
-    print("      - TIME_AND_FREQ   → affects both")
+    print("      - TIME_ONLY       → affects time priority (Ch6) only")
+    print("      - FREQ_ONLY       → affects frequency priority (Ch5) only")
+    print("      - TIME_AND_FREQ   → affects both (Ch5 and Ch6)")
     print()
-    print("SMA rules:")
-    print("  - SMA1 output shares the same path as the CM4 1PPS:")
-    print("      * If CM4 is PTP GM, SMA1 CANNOT be used as an output.")
-    print("      * SMA1 output can only be 1PPS, not arbitrary frequency.")
-    print("  - SMA4 is input-only and cannot be used as an output.\n")
+    print("SMA Mapping (Rear Panel View):")
+    print("  The wizard uses User/Rear-Panel numbering (SMA1..SMA4).")
+    print("  Internally, these map to Hardware/Schematic SMAs as follows:")
+    print("    User SMA1 <-> HW SMA4")
+    print("    User SMA2 <-> HW SMA3")
+    print("    User SMA3 <-> HW SMA2")
+    print("    User SMA4 <-> HW SMA1")
+    print()
+    print("SMA capabilities (based on User/Real numbering):")
+    print("  - User SMA1 (HW SMA4): Input-only.")
+    print("  - User SMA2 (HW SMA3): Fixed 10MHz Output (V6) / or Input.")
+    print("  - User SMA3 (HW SMA2): Input or Output (Arbitrary Freq via Q10).")
+    print("  - User SMA4 (HW SMA1): Input or Output (1PPS Phase Aligned). Special constraints if GM.")
+    print()
 
     # Step 1: CM4 PTP role
     print("Step 1: CM4 PTP role")
@@ -521,34 +574,48 @@ def run_wizard(path: str) -> None:
         synce_cfg = SyncEConfig(used_as_source=False, priority=None, recover_port=None)
 
     # Step 5: SMAs
-    print("\nStep 5: SMA configuration (SMA1..SMA4)")
-    print("Each SMA can be:")
-    print("  INPUT  - used as a time/freq reference into the DPLL.")
-    print("           - TIME_ONLY or TIME_AND_FREQ generally means 1PPS.")
-    print("           - FREQ_ONLY generally means a continuous clock (e.g. 10 MHz).")
-    print("           You must provide a PRIORITY when used as input.")
-    print("  OUTPUT - driven by the DPLL with a frequency you choose (Hz, 1..250e6).")
-    print("           NOTE: SMA1 OUTPUT is special and only supports 1PPS,")
-    print("                 and SMA1 OUTPUT is not allowed when CM4 is PTP GM.")
-    print("  UNUSED - not connected to DPLL in this config.")
-    print("  NOTE: SMA4 is input-only and cannot be used as OUTPUT.\n")
-
+    print("\nStep 5: SMA configuration (User/Rear-Panel SMA1..SMA4)")
+    
     smas: List[SmaConfig] = []
+    
+    # User SMA 1..4 (Rear view)
     for i in range(1, 5):
-        name = f"SMA{i}"
-        print(f"\nConfiguring {name}:")
-        if name == "SMA1" and role_str == "GM":
-            print("  Note: CM4 is PTP GM, so SMA1 cannot be used as an OUTPUT.")
-            print("        (it shares the CM4 1PPS path). You may use it as INPUT or UNUSED.")
+        user_name = f"SMA{i}"
+        hw_name = user_to_hw_sma(user_name)
+        
+        print(f"\nConfiguring {user_name} (Hardware {hw_name}):")
+        
+        # Branch based on HW capabilities
+        if hw_name == "SMA1":
+            # User SMA4
+            if role_str == "GM":
+                print(f"  Note: CM4 is PTP GM, so {user_name} (HW SMA1) cannot be used as an OUTPUT.")
+                print("        (it shares the CM4 1PPS path). You may use it as INPUT or UNUSED.")
+                prompt = "  Direction (INPUT/UNUSED) [UNUSED]: "
+                allowed = {"INPUT", "UNUSED"}
+            else:
+                print(f"  Note: {user_name} (HW SMA1) supports Input or Output (1PPS Phase Aligned).")
+                prompt = "  Direction (INPUT/OUTPUT/UNUSED) [UNUSED]: "
+                allowed = {"INPUT", "OUTPUT", "UNUSED"}
+                
+        elif hw_name == "SMA4":
+            # User SMA1
+            print(f"  Note: {user_name} (HW SMA4) is INPUT-ONLY.")
             prompt = "  Direction (INPUT/UNUSED) [UNUSED]: "
             allowed = {"INPUT", "UNUSED"}
-        elif name == "SMA4":
-            print("  Note: SMA4 is input-only. You may use it as INPUT or UNUSED.")
-            prompt = "  Direction (INPUT/UNUSED) [UNUSED]: "
-            allowed = {"INPUT", "UNUSED"}
-        else:
+            
+        elif hw_name == "SMA3":
+            # User SMA2
+            print(f"  Note: {user_name} (HW SMA3) is Input or Output.")
+            print("        In V6, Output is Fixed 10MHz (SyncE Freq).")
             prompt = "  Direction (INPUT/OUTPUT/UNUSED) [UNUSED]: "
             allowed = {"INPUT", "OUTPUT", "UNUSED"}
+            
+        else: # SMA2 (User SMA3)
+            print(f"  Note: {user_name} (HW SMA2) is Input or Output (Configurable Freq).")
+            prompt = "  Direction (INPUT/OUTPUT/UNUSED) [UNUSED]: "
+            allowed = {"INPUT", "OUTPUT", "UNUSED"}
+
 
         d = input(prompt).strip().upper() or "UNUSED"
         if d not in allowed:
@@ -567,7 +634,7 @@ def run_wizard(path: str) -> None:
                 prio = 3
             smas.append(
                 SmaConfig(
-                    name=name,
+                    name=hw_name,   # STORE AS HW NAME
                     direction=SmaDirection.INPUT.value,
                     role=r,
                     priority=prio,
@@ -575,16 +642,61 @@ def run_wizard(path: str) -> None:
                 )
             )
         elif d == "OUTPUT":
-            if name == "SMA1":
-                # OUTPUT only allowed here if CM4 is not GM, still 1PPS-only
-                print("  SMA1 OUTPUT is limited to 1PPS. Setting frequency to 1 Hz.")
+            if hw_name == "SMA1":
+                # User SMA4
+                # In GM mode, this is blocked above. In Client/None, allow freq.
+                print("  SMA1 (HW) is driven by Channel 6 (Time).")
+                print("  Typically 1PPS, but you can request other frequencies.")
+                
+                while True:
+                    f_str = input("  Desired output frequency in Hz (1 to 250000000) [1]: ").strip() or "1"
+                    try:
+                        freq = int(f_str)
+                    except ValueError:
+                        print("    Please enter an integer.")
+                        continue
+                    if not (1 <= freq <= 250_000_000):
+                        print("    Frequency must be between 1 and 250000000 Hz.")
+                        continue
+                    break
+                
                 smas.append(
                     SmaConfig(
-                        name=name,
+                        name=hw_name,
                         direction=SmaDirection.OUTPUT.value,
                         role=None,
                         priority=None,
-                        frequency_hz=1,
+                        frequency_hz=freq,
+                    )
+                )
+
+            elif hw_name == "SMA3":
+                # User SMA2
+                # Driven by Q9 (Channel 5). 
+                print("  SMA3 (HW) is driven by Channel 5 (SyncE/Freq).")
+                print("  Note: Frequency is derived via integer output divider from DCO.")
+                print("        Exact frequency references (e.g. 10MHz) are best.")
+                print("        Arbitrary frequencies may have PPM error.")
+                
+                while True:
+                    f_str = input("  Desired output frequency in Hz [10000000]: ").strip() or "10000000"
+                    try:
+                        freq = int(f_str)
+                    except ValueError:
+                        print("    Please enter an integer.")
+                        continue
+                    if not (1 <= freq <= 250_000_000):
+                        print("    Frequency must be between 1 and 250000000 Hz.")
+                        continue
+                    break
+
+                smas.append(
+                    SmaConfig(
+                        name=hw_name,
+                        direction=SmaDirection.OUTPUT.value,
+                        role=None,
+                        priority=None,
+                        frequency_hz=freq,
                     )
                 )
             else:
@@ -601,7 +713,7 @@ def run_wizard(path: str) -> None:
                     break
                 smas.append(
                     SmaConfig(
-                        name=name,
+                        name=hw_name,
                         direction=SmaDirection.OUTPUT.value,
                         role=None,
                         priority=None,
@@ -611,13 +723,16 @@ def run_wizard(path: str) -> None:
         else:
             smas.append(
                 SmaConfig(
-                    name=name,
+                    name=hw_name,
                     direction=SmaDirection.UNUSED.value,
                     role=None,
                     priority=None,
                     frequency_hz=None,
                 )
             )
+    
+    # Sort SMAs by HW name to match 1..4 order in JSON (not strictly required but cleaner)
+    smas.sort(key=lambda s: s.name)
 
     cfg = TimingConfig(
         ptp_role=role_str,
@@ -629,7 +744,8 @@ def run_wizard(path: str) -> None:
     save_config(path, cfg)
     print("\nYou can now run:")
     print(f"  python3 config.py validate -c {path}")
-    print("to see how this maps into DPLL channel priorities (ch2 vs ch5 & ch6).")
+    print("to see how this maps into DPLL channel priorities (ch5 & ch6) and logical User SMA names.")
+
 
 
 # ---------- CLI ----------
@@ -663,8 +779,8 @@ def main():
     elif args.cmd == "show-derived":
         cfg = load_config(args.config)
         plan = derive_plan(cfg)
-        print("Channel 2 inputs:", [(s.name, s.role.value, s.priority) for s in plan.channel2_inputs])
-        print("Time channel inputs (ch5 & ch6):", [(s.name, s.role.value, s.priority) for s in plan.time_channel_inputs])
+        print("Channel 5 inputs (Freq):", [(s.name, s.role.value, s.priority) for s in plan.channel5_inputs])
+        print("Channel 6 inputs (Time):", [(s.name, s.role.value, s.priority) for s in plan.channel6_inputs])
         if plan.warnings:
             print("Warnings:", plan.warnings)
         if plan.errors:

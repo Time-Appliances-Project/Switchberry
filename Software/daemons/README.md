@@ -8,6 +8,24 @@ This directory contains the **systemd services** that bring up Switchberry’s t
 
 The system is intended to start in this order:
 
+```mermaid
+sequenceDiagram
+    participant Boot as System Boot
+    participant Apply as apply-timing.service
+    participant Init as full-init.service
+    participant Monitor as dpll-monitor.service
+    participant Role as ptp-role.service
+    participant PTP as PTP Daemons
+
+    Note over Boot,PTP: Systemd Dependency Chain
+
+    Boot->>Apply: 1. Program 8A34004 (DPLL)
+    Apply->>Init: 2. Initialize Switch (KSZ9567)
+    Init->>Monitor: 3. Start DPLL Monitor
+    Init->>Role: 4. Determine PTP Role
+    Role->>PTP: 5. Launch ptp4l / ts2phc
+```
+
 1. **Init DPLL + board multiplexers**
    - **Service:** `switchberry-apply-timing.service`
    - **Runs:** `/usr/local/sbin/apply_timing.py -c /etc/startup-dpll.json`
