@@ -490,21 +490,63 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
     # Check for any source on Channel 6 (Time/1PPS)
     has_time_source = len(plan.channel6_inputs) > 0
 
-    if has_freq_only_source:
-        # Scenario A: Precise Frequency Source Available (SyncE/10MHz) -> Ch5 Master
-        print("\nCombo Bus Strategy: Freq Master detected (Ch5). Ch6 will slave to Ch5.")
-        # Enable Ch6 -> Ch5
-        configure_combo_slaving(slave=6, master=5, enable=True, dry_run=dry_run)
-        # Disable Ch5 -> Ch6 (prevent loop)
-        configure_combo_slaving(slave=5, master=6, enable=False, dry_run=dry_run)
-
-    elif has_time_source:
-        # Scenario B: No Freq Source, but Time Source Available (GPS/PTP) -> Ch6 Master
-        print("\nCombo Bus Strategy: Only Time/GPS sources detected. Ch5 will slave to Ch6.")
-        # Enable Ch5 -> Ch6
-        configure_combo_slaving(slave=5, master=6, enable=True, dry_run=dry_run)
-        # Disable Ch6 -> Ch5 (prevent loop)
+    if has_time_source:
+        # Scenario A: Time Source Available (GPS, PTP, SMA 1PPS) -> Ch6 Independent
+        # Even if SyncE is present on Ch5, we do NOT slave Ch6 to Ch5 because PTP 1PPS
+        # often drifts relative to SyncE frequency (e.g. NIC oscillator wander vs SyncE).
+        # Slaving creates a "two masters" conflict that causes phase drift or bouncing.
+        # Ch6 should lock directly to its 1PPS input.
+        print("\nCombo Bus Strategy: Time Source detected. Ch6 runs independently for stable phase lock.")
+        
+        # Disable Ch6 -> Ch5 (Ch6 is independent)
         configure_combo_slaving(slave=6, master=5, enable=False, dry_run=dry_run)
+        
+        # EXPERIMENT 2026-02-10:
+        # Phase Slope Limit (PSL) Logic:
+        # - If GPS is present (Grandmaster), use TIGHT filtering (10 ns/s).
+        # - If PTP (CM4) is present (Client), use RELAXED filtering (100 ns/s) to track servo.
+        # - If SMA is present (USER input), default to TIGHT (10 ns/s) unless user changes it manually.
+        has_gps_source = any("GPS" in s.name for s in plan.channel6_inputs)
+        has_ptp_source = any("CM4" in s.name for s in plan.channel6_inputs)
+        
+        if has_gps_source:
+            psl_limit = 10
+            reason = "GPS detected (Tight)"
+        elif has_ptp_source:
+            # Tuned for PTP Client (CM4 tracking):
+            # - PSL: 300 ns/s (Track servo transients)
+            # - Bandwidth: 100 mHz (Track wander without excessive noise integration)
+            # - Damping: 4 (Slightly faster response)
+            psl_limit = 300
+            reason = "PTP/CM4 detected (Relaxed)"
+            
+            print("Experiment: Setting Ch6 Loop Bandwidth to 100 mHz (PTP tracking).")
+            run(["dplltool", "set-loop-bw", "6", "100", "mHz"], dry_run=dry_run)
+            
+            print("Experiment: Setting Ch6 Damping Factor to 4.")
+            run(["dplltool", "set-damp-factor", "6", "4"], dry_run=dry_run)
+        else:
+            psl_limit = 10
+            reason = "Default/SMA (Tight)"
+        
+        print(f"Experiment: Setting Ch6 Phase Slope Limit to {psl_limit} ns/s ({reason}).")
+        run(["dplltool", "set-psl", "6", str(psl_limit)], dry_run=dry_run)
+        
+        # If Freq source exists on Ch5 (Scenario A1: SyncE + PTP), Ch5 runs independently too.
+        # If NO Freq source (Scenario A2: GPS/PTP only), Ch5 slaves to Ch6 to get synthesized frequency.
+        if has_freq_only_source:
+            print("  - Frequency Source detected (SyncE/10MHz). Ch5 runs independently.")
+            configure_combo_slaving(slave=5, master=6, enable=False, dry_run=dry_run)
+        else:
+            print("  - No dedicated Freq Source. Ch5 slaves to Ch6 (Time) for synthesized frequency.")
+            configure_combo_slaving(slave=5, master=6, enable=True, dry_run=dry_run)
+
+    elif has_freq_only_source:
+        # Scenario B: ONLY Frequency Source Available (SyncE/10MHz, no PPS)
+        # Ch6 MUST slave to Ch5 to generate stable 1PPS/Time from the frequency reference.
+        print("\nCombo Bus Strategy: Only Freq Source (SyncE/10MHz) detected. Ch6 slaves to Ch5.")
+        configure_combo_slaving(slave=6, master=5, enable=True, dry_run=dry_run)
+        configure_combo_slaving(slave=5, master=6, enable=False, dry_run=dry_run)
 
     else:
         # Scenario C: No sources at all?
@@ -633,42 +675,34 @@ def configure_dpll_outputs(cfg: TimingConfig, dry_run: bool = False):
         # Default to 1PPS if SMA1 not configured as output
         q11_hz = 1.0
 
-    # --- Q9 (Ch5) → SMA3 ---
-    # Q9 is fixed 10MHz in V6, configured via TCS/EEPROM, NOT via dplltool
-    # Just log and warn if user tried to configure SMA3 as OUTPUT
+    # --- Q9 (Ch5) → SMA3 (User SMA2) ---
+    # Q9 uses output divider only (we don't touch its FOD).
+    # Default is 10MHz from TCS/EEPROM, but user can override via output divider.
     sma3_cfg = next(s for s in cfg.smas if s.name == "SMA3")
     if sma3_cfg.direction == "OUTPUT":
-        if sma3_cfg.frequency_hz is not None and sma3_cfg.frequency_hz != 10_000_000:
-            print(f"WARNING: SMA3 frequency_hz={sma3_cfg.frequency_hz} is ignored in V6.")
-            print("         Q9 (Ch5) → SMA3 is fixed at 10MHz (configured in TCS/EEPROM).")
-        else:
-            print("SMA3 as OUTPUT: Q9 (Ch5) provides fixed 10MHz (SyncE frequency aligned)")
+        q9_freq = sma3_cfg.frequency_hz if sma3_cfg.frequency_hz is not None else 10_000_000
         if sma3_cfg.frequency_hz == 1:
-            print("WARNING: SMA3 cannot provide phase-aligned 1PPS in V6.")
-            print("         Use SMA1 for phase-aligned 1PPS output instead.")
+            print("WARNING: SMA3 (Q9/Ch5) cannot provide phase-aligned 1PPS.")
+            print("         Use SMA1 (Q11/Ch6) for phase-aligned 1PPS output instead.")
+        print(f"Configuring Q9 (SMA3/User SMA2) output divider for {q9_freq} Hz:")
+        configure_sma_output_divider(9, q9_freq, dry_run=dry_run)
 
     # If Q10 is not being used, default to 1Hz so we can still call set-output-freq
     if q10_hz is None:
         q10_hz = 1.0
         print("Q10 (SMA2) not configured as OUTPUT, defaulting to 1Hz")
 
-    # Use traditional set-output-freq for Q11 (SMA1) if it's 1PPS or low freq,
-    # but for Q10 (SMA2) which might be high freq, use the new divider method.
-    # Actually, let's use the explicit divider method for ANY user-config frequency
-    # to ensure they get what they asked for (within integer limits).
-    
-    # Q10 (Output 10) -> SMA2
-    if q10_hz is not None:
-        configure_sma_output_divider(10, int(q10_hz), dry_run=dry_run)
-
-    # Q11 (Output 11) -> SMA1 / CM4
-    if q11_hz is not None:
-        # If it is 1.0 Hz, we can still use the divider method (2.5G div)
-        configure_sma_output_divider(11, int(q11_hz), dry_run=dry_run)
-
-    # We skip calling "set-output-freq" (legacy helper) because it sets both Q10/Q11 
-    # and might override our precise divider settings with its own internal logic.
-    # The new dplltool commands handles them individually.
+    # Use the full FOD M/N method for Q10 and Q11 via set-output-freq.
+    # This programs the Fractional Output Divider (FOD) inside the DPLL,
+    # giving exact frequency synthesis (not limited to integer divider resolution).
+    # Q9 (SMA3/Ch5) uses set-output-divider only, since we don't want to touch its FOD.
+    print(f"\nConfiguring Q10/Q11 via FOD (set-output-freq):")
+    print(f"  Q10 (SMA2/User SMA3): {q10_hz} Hz")
+    print(f"  Q11 (SMA1/User SMA4): {q11_hz} Hz")
+    run([
+        "dplltool", "set-output-freq",
+        str(q10_hz), str(q11_hz),
+    ], dry_run=dry_run)
 
 
 # ---------- High-level apply function ----------

@@ -153,6 +153,14 @@ static void usage(const char *prog) {
       "      | --set-output-freq <output3 freq_hz> <output4 freq_hz>\n"
       "      | --set-output-divider <output_idx> <divider>\n"
       "      | --set-combo-slave <chan> <master_chan> <enable|disable>\n"
+      "      | set-loop-bw <chan> <value> <uHz|mHz|Hz|kHz>\n"
+      "      | get-loop-bw <chan>\n"
+      "      | set-psl <chan> <limit_ns_per_s>\n"
+      "      | get-psl <chan>\n"
+      "      | set-damp-factor <chan> <0..7>\n"
+      "      | get-damp-factor <chan>\n"
+      "     [--spidev <path>]\n"
+      "     [--spidev <path>]\n"
       "     [--spidev <path>]\n"
       "     [--busnum <n> --csnum <m>]\n"
       "     [--hz <freq>] [--mode <0..3>] [--tcs-debug]\n"
@@ -210,6 +218,26 @@ static void usage(const char *prog) {
       "  set-combo-slave <chan> <master_chan> <enable|disable>   (or "
       "--set-combo-slave)\n"
       "      Configure combo bus slave settings (e.g. Ch6 slaves to Ch5).\n"
+      "  get-combo-slave <chan>\n"
+      "      Read combo bus slave settings.\n"
+      "  set-loop-bw <chan> <value> <uHz|mHz|Hz|kHz>\n"
+      "      Set DPLL loop filter bandwidth for a channel.\n"
+      "          chan  : DPLL channel index (e.g. 5, 6)\n"
+      "          value : unsigned 14-bit bandwidth value (0..16383)\n"
+      "          unit  : uHz, mHz, Hz, or kHz\n"
+      "      Example: set-loop-bw 6 1 mHz   (set Ch6 to 1 mHz bandwidth)\n"
+      "  get-loop-bw <chan>\n"
+      "      Read and print the current loop bandwidth for a channel.\n"
+      "  set-psl <chan> <limit_ns_per_s>\n"
+      "      Set Phase Slope Limit (0..65535 ns/s).\n"
+      "      Controls max rate of phase correction.\n"
+      "  get-psl <chan>\n"
+      "      Read and print current Phase Slope Limit.\n"
+      "  set-damp-factor <chan> <val>\n"
+      "      Set Loop Filter Damping Factor (0..7).\n"
+      "      0=Overdamped (1.002), 7=Underdamped (1.172).\n"
+      "  get-damp-factor <chan>\n"
+      "      Read and print current Damping Factor.\n"
       "\n"
       "Connection options:\n"
       "  --spidev <path>         SPI node (e.g. /dev/spidev2.1). Overrides "
@@ -642,6 +670,198 @@ static int dpll_cmd_set_combo_slave(uint8_t chan, uint8_t master_chan,
   return 0;
 }
 
+static int dpll_cmd_get_combo_slave(uint8_t chan) {
+  uint8_t en = 0, master = 0;
+  int rc;
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Config", chan,
+                             "DPLL_COMBO_SLAVE_CFG_0", "PRI_COMBO_SRC_EN", &en);
+  if (rc) {
+    fprintf(stderr, "Failed to read PRI_COMBO_SRC_EN, rc=%d\n", rc);
+    return rc;
+  }
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Config", chan,
+                             "DPLL_COMBO_SLAVE_CFG_0", "PRI_COMBO_SRC_ID",
+                             &master);
+  if (rc) {
+    fprintf(stderr, "Failed to read PRI_COMBO_SRC_ID, rc=%d\n", rc);
+    return rc;
+  }
+
+  printf("Slave: %s, Master: %u\n", en ? "Enabled" : "Disabled", master);
+  return 0;
+}
+
+/*
+ * Set DPLL loop filter bandwidth for a channel.
+ * EXPERIMENT added 2026-02-10: Narrowing Ch6 bandwidth when combo-bus-slaved
+ * to Ch5 (SyncE) to reduce LOCKED<->LOCKREC bouncing.
+ *
+ * Register layout:
+ *   DPLL_BW_0 (offset 0x004): BW_7_0[7:0]   = DPLL_BW bits [7:0]
+ *   DPLL_BW_1 (offset 0x005): BW_UNIT[7:6]   = unit (0=uHz,1=mHz,2=Hz,3=kHz)
+ *                              BW_13_8[5:0]   = DPLL_BW bits [13:8]
+ */
+static int dpll_cmd_set_loop_bw(uint8_t chan, uint16_t bw_value,
+                                uint8_t bw_unit) {
+  if (bw_value > 0x3FFF) {
+    fprintf(stderr, "BW value %u exceeds 14-bit max (16383)\n", bw_value);
+    return -1;
+  }
+  if (bw_unit > 3) {
+    fprintf(stderr, "BW unit %u out of range (0..3)\n", bw_unit);
+    return -1;
+  }
+
+  static const char *unit_names[] = {"uHz", "mHz", "Hz", "kHz"};
+  fprintf(stderr, "dpll_cmd_set_loop_bw: chan=%u bw=%u %s\n", chan, bw_value,
+          unit_names[bw_unit]);
+
+  /* BW_7_0: lower 8 bits */
+  uint8_t bw_lo = (uint8_t)(bw_value & 0xFF);
+  int rc = cm_string_field_write8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_BW_0",
+                                  "BW_7_0", bw_lo);
+  if (rc) {
+    fprintf(stderr, "Failed to write BW_7_0, rc=%d\n", rc);
+    return rc;
+  }
+
+  /* BW_13_8: upper 6 bits */
+  uint8_t bw_hi = (uint8_t)((bw_value >> 8) & 0x3F);
+  rc = cm_string_field_write8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_BW_1",
+                              "BW_13_8", bw_hi);
+  if (rc) {
+    fprintf(stderr, "Failed to write BW_13_8, rc=%d\n", rc);
+    return rc;
+  }
+
+  /* BW_UNIT */
+  rc = cm_string_field_write8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_BW_1",
+                              "BW_UNIT", bw_unit);
+  if (rc) {
+    fprintf(stderr, "Failed to write BW_UNIT, rc=%d\n", rc);
+    return rc;
+  }
+
+  /* No trigger needed — DPLL_Ctrl registers are auto-trigger */
+  return 0;
+}
+
+/*
+ * Read and print the current DPLL loop filter bandwidth for a channel.
+ */
+static int dpll_cmd_get_loop_bw(uint8_t chan) {
+  uint8_t bw_lo = 0, bw_hi = 0, bw_unit = 0;
+  int rc;
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_BW_0",
+                             "BW_7_0", &bw_lo);
+  if (rc) {
+    fprintf(stderr, "Failed to read BW_7_0, rc=%d\n", rc);
+    return rc;
+  }
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_BW_1",
+                             "BW_13_8", &bw_hi);
+  if (rc) {
+    fprintf(stderr, "Failed to read BW_13_8, rc=%d\n", rc);
+    return rc;
+  }
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_BW_1",
+                             "BW_UNIT", &bw_unit);
+  if (rc) {
+    fprintf(stderr, "Failed to read BW_UNIT, rc=%d\n", rc);
+    return rc;
+  }
+
+  uint16_t bw_value = (uint16_t)bw_lo | ((uint16_t)(bw_hi & 0x3F) << 8);
+  static const char *unit_names[] = {"uHz", "mHz", "Hz", "kHz"};
+  const char *uname = (bw_unit <= 3) ? unit_names[bw_unit] : "???";
+
+  printf("%u %s\n", bw_value, uname);
+  return 0;
+}
+
+/*
+ * Set Phase Slope Limit (PSL) in ns/s.
+ * Registers: DPLL_PSL_7_0 (0x06), DPLL_PSL_15_8 (0x07)
+ */
+static int dpll_cmd_set_psl(uint8_t chan, uint16_t psl_ns) {
+  fprintf(stderr, "dpll_cmd_set_psl: chan=%u psl=%u ns/s\n", chan, psl_ns);
+
+  /* PSL_7_0 */
+  uint8_t lo = (uint8_t)(psl_ns & 0xFF);
+  int rc = cm_string_field_write8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_PSL_7_0",
+                                  "VALUE", lo);
+  if (rc) {
+    fprintf(stderr, "Failed to write DPLL_PSL_7_0, rc=%d\n", rc);
+    return rc;
+  }
+
+  /* PSL_15_8 */
+  uint8_t hi = (uint8_t)((psl_ns >> 8) & 0xFF);
+  rc = cm_string_field_write8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_PSL_15_8",
+                              "VALUE", hi);
+  if (rc) {
+    fprintf(stderr, "Failed to write DPLL_PSL_15_8, rc=%d\n", rc);
+    return rc;
+  }
+  return 0;
+}
+
+static int dpll_cmd_get_psl(uint8_t chan) {
+  uint8_t lo = 0, hi = 0;
+  int rc;
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_PSL_7_0",
+                             "VALUE", &lo);
+  if (rc) {
+    fprintf(stderr, "Failed to read DPLL_PSL_7_0, rc=%d\n", rc);
+    return rc;
+  }
+
+  rc = cm_string_field_read8(&g_cm_bus, "DPLL_Ctrl", chan, "DPLL_PSL_15_8",
+                             "VALUE", &hi);
+  if (rc) {
+    fprintf(stderr, "Failed to read DPLL_PSL_15_8, rc=%d\n", rc);
+    return rc;
+  }
+
+  uint16_t val = (uint16_t)lo | ((uint16_t)hi << 8);
+  printf("%u\n", val);
+  return 0;
+}
+
+static int dpll_cmd_set_damp_factor(uint8_t chan, uint8_t val) {
+  fprintf(stderr, "dpll_cmd_set_damp_factor: chan=%u val=%u\n", chan, val);
+  if (val > 7) {
+    fprintf(stderr, "Error: Damping factor must be 0..7\n");
+    return 1;
+  }
+
+  int rc = cm_string_field_write8(&g_cm_bus, "DPLL_Ctrl", chan,
+                                  "DPLL_LOOP_FILTER_CFG", "DAMP_FTR", val);
+  if (rc) {
+    fprintf(stderr, "Failed to write DAMP_FTR, rc=%d\n", rc);
+    return rc;
+  }
+  return 0;
+}
+
+static int dpll_cmd_get_damp_factor(uint8_t chan) {
+  uint8_t val = 0;
+  int rc = cm_string_field_read8(&g_cm_bus, "DPLL_Ctrl", chan,
+                                 "DPLL_LOOP_FILTER_CFG", "DAMP_FTR", &val);
+  if (rc) {
+    fprintf(stderr, "Failed to read DAMP_FTR, rc=%d\n", rc);
+    return rc;
+  }
+  printf("%u\n", val);
+  return 0;
+}
+
 typedef enum {
   DPLL_LOCK_STATE_UNKNOWN = 7,
   DPLL_LOCK_STATE_LOCKED = 3,
@@ -798,6 +1018,13 @@ int main(int argc, char **argv) {
 
   int do_set_output_divider = 0;
   int do_set_combo_slave = 0;
+  int do_get_combo_slave = 0;
+  int do_set_loop_bw = 0;
+  int do_get_loop_bw = 0;
+  int do_set_psl = 0;
+  int do_get_psl = 0;
+  int do_set_damp_factor = 0;
+  int do_get_damp_factor = 0;
 
   /* Monitor/daemon helper commands */
   int do_get_state = 0;
@@ -830,6 +1057,10 @@ int main(int argc, char **argv) {
 
   uint32_t hl_divider = 0;
   uint8_t hl_master_chan = 0;
+  uint16_t hl_bw_value = 0;
+  uint8_t hl_bw_unit = 0;
+  uint16_t hl_psl_val = 0;
+  uint8_t hl_damp_val = 0;
 
   /* Monitor helper parameters */
   uint8_t mon_chan = 0;
@@ -1093,6 +1324,113 @@ int main(int argc, char **argv) {
       }
       do_set_combo_slave = 1;
 
+    } else if ((!strcmp(argv[i], "get-combo-slave") ||
+                !strcmp(argv[i], "--get-combo-slave")) &&
+               i + 1 < argc) {
+      uint32_t tmp;
+      if (parse_u32(argv[++i], &tmp) != 0 || tmp > 255) {
+        fprintf(stderr, "Bad get-combo-slave <chan>\n");
+        return 1;
+      }
+      mon_chan = (uint8_t)tmp;
+      do_get_combo_slave = 1;
+
+    } else if ((!strcmp(argv[i], "set-loop-bw") ||
+                !strcmp(argv[i], "--set-loop-bw")) &&
+               i + 3 < argc) {
+      uint32_t tmp_ch, tmp_bw;
+      if (parse_u32(argv[++i], &tmp_ch) != 0 || tmp_ch > 255) {
+        fprintf(stderr, "Bad set-loop-bw <chan>\n");
+        return 1;
+      }
+      hl_chan = (uint8_t)tmp_ch;
+
+      if (parse_u32(argv[++i], &tmp_bw) != 0 || tmp_bw > 16383) {
+        fprintf(stderr, "Bad set-loop-bw <value> (0..16383)\n");
+        return 1;
+      }
+      hl_bw_value = (uint16_t)tmp_bw;
+
+      const char *unit_str = argv[++i];
+      if (!strcmp(unit_str, "uHz") || !strcmp(unit_str, "0")) {
+        hl_bw_unit = 0;
+      } else if (!strcmp(unit_str, "mHz") || !strcmp(unit_str, "1")) {
+        hl_bw_unit = 1;
+      } else if (!strcmp(unit_str, "Hz") || !strcmp(unit_str, "2")) {
+        hl_bw_unit = 2;
+      } else if (!strcmp(unit_str, "kHz") || !strcmp(unit_str, "3")) {
+        hl_bw_unit = 3;
+      } else {
+        fprintf(stderr, "Bad set-loop-bw <unit> (uHz|mHz|Hz|kHz)\n");
+        return 1;
+      }
+      do_set_loop_bw = 1;
+
+    } else if ((!strcmp(argv[i], "get-loop-bw") ||
+                !strcmp(argv[i], "--get-loop-bw")) &&
+               i + 1 < argc) {
+      uint32_t tmp;
+      if (parse_u32(argv[++i], &tmp) != 0 || tmp > 255) {
+        fprintf(stderr, "Bad get-loop-bw <chan>\n");
+        return 1;
+      }
+      mon_chan = (uint8_t)tmp;
+      do_get_loop_bw = 1;
+
+    } else if ((!strcmp(argv[i], "set-psl") || !strcmp(argv[i], "--set-psl")) &&
+               i + 2 < argc) {
+      uint32_t tmp_ch, tmp_psl;
+      if (parse_u32(argv[++i], &tmp_ch) != 0 || tmp_ch > 255) {
+        fprintf(stderr, "Bad set-psl <chan>\n");
+        return 1;
+      }
+      hl_chan = (uint8_t)tmp_ch;
+
+      if (parse_u32(argv[++i], &tmp_psl) != 0 || tmp_psl > 65535) {
+        fprintf(stderr, "Bad set-psl <val> (0..65535)\n");
+        return 1;
+      }
+      hl_psl_val = (uint16_t)tmp_psl;
+      do_set_psl = 1;
+
+    } else if ((!strcmp(argv[i], "get-psl") || !strcmp(argv[i], "--get-psl")) &&
+               i + 1 < argc) {
+      uint32_t tmp;
+      if (parse_u32(argv[++i], &tmp) != 0 || tmp > 255) {
+        fprintf(stderr, "Bad get-psl <chan>\n");
+        return 1;
+      }
+      mon_chan = (uint8_t)tmp;
+      do_get_psl = 1;
+
+    } else if ((!strcmp(argv[i], "set-damp-factor") ||
+                !strcmp(argv[i], "--set-damp-factor")) &&
+               i + 2 < argc) {
+      uint32_t tmp_ch, tmp_val;
+      if (parse_u32(argv[++i], &tmp_ch) != 0 || tmp_ch > 255) {
+        fprintf(stderr, "Bad set-damp-factor <chan>\n");
+        return 1;
+      }
+      hl_chan = (uint8_t)tmp_ch;
+
+      if (parse_u32(argv[++i], &tmp_val) != 0 || tmp_val > 7) {
+        fprintf(stderr, "Bad set-damp-factor <val> (0..7)\n");
+        return 1;
+      }
+      hl_damp_val = (uint8_t)tmp_val;
+      do_set_damp_factor = 1;
+
+    } else if ((!strcmp(argv[i], "get-damp-factor") ||
+                !strcmp(argv[i], "--get-damp-factor")) &&
+               i + 1 < argc) {
+      uint32_t tmp;
+      if (parse_u32(argv[++i], &tmp) != 0 || tmp > 255) {
+        fprintf(stderr, "Bad get-damp-factor <chan>\n");
+        return 1;
+      }
+      mon_chan = (uint8_t)tmp;
+      do_get_damp_factor = 1;
+
     } else if ((!strcmp(argv[i], "out-phase-adj-get") ||
                 !strcmp(argv[i], "--out-phase-adj-get")) &&
                i + 1 < argc) {
@@ -1197,7 +1535,9 @@ int main(int argc, char **argv) {
       do_set_chan_input + do_set_output_freq + do_set_out2_dest + do_prog_file +
       do_out_phase_adj_get + do_out_phase_adj_set + do_wr_freq_get +
       do_wr_freq_set_word + do_wr_freq_set_ppb + do_set_output_divider +
-      do_set_combo_slave;
+      do_set_combo_slave + do_get_combo_slave + do_set_loop_bw +
+      do_get_loop_bw + do_set_psl + do_get_psl + do_set_damp_factor +
+      do_get_damp_factor;
 
   if (action_count != 1) {
     fprintf(stderr, "Specify exactly one action: "
@@ -1341,6 +1681,42 @@ fprintf(stderr, "Using spidev: %s (hz=%u, mode=%d)\n",
       rc = 1;
     }
 
+  } else if (do_get_combo_slave) {
+    if (dpll_cmd_get_combo_slave(mon_chan) != 0) {
+      fprintf(stderr, "get-combo-slave failed.\n");
+      rc = 1;
+    }
+
+  } else if (do_set_loop_bw) {
+    if (dpll_cmd_set_loop_bw(hl_chan, hl_bw_value, hl_bw_unit) != 0) {
+      fprintf(stderr, "set-loop-bw failed.\n");
+      rc = 1;
+    }
+  } else if (do_get_loop_bw) {
+    if (dpll_cmd_get_loop_bw(mon_chan) != 0) {
+      fprintf(stderr, "get-loop-bw failed.\n");
+      rc = 1;
+    }
+  } else if (do_set_psl) {
+    if (dpll_cmd_set_psl(hl_chan, hl_psl_val) != 0) {
+      fprintf(stderr, "set-psl failed.\n");
+      rc = 1;
+    }
+  } else if (do_get_psl) {
+    if (dpll_cmd_get_psl(mon_chan) != 0) {
+      fprintf(stderr, "get-psl failed.\n");
+      rc = 1;
+    }
+  } else if (do_set_damp_factor) {
+    if (dpll_cmd_set_damp_factor(hl_chan, hl_damp_val) != 0) {
+      fprintf(stderr, "set-damp-factor failed.\n");
+      rc = 1;
+    }
+  } else if (do_get_damp_factor) {
+    if (dpll_cmd_get_damp_factor(mon_chan) != 0) {
+      fprintf(stderr, "get-damp-factor failed.\n");
+      rc = 1;
+    }
   } else if (do_out_phase_adj_get) {
     int32_t adj = 0;
     int rr =
@@ -1353,7 +1729,6 @@ fprintf(stderr, "Using spidev: %s (hz=%u, mode=%d)\n",
       printf("Output[%u].OUT_PHASE_ADJ = %d (0x%08x)\n", hl_out_idx, adj,
              (uint32_t)adj);
     }
-
   } else if (do_out_phase_adj_set) {
     int rr = cm_write_output_phase_adj_s32(&g_cm_bus, (unsigned)hl_out_idx,
                                            hl_phase_adj, 1, 0);
@@ -1365,7 +1740,6 @@ fprintf(stderr, "Using spidev: %s (hz=%u, mode=%d)\n",
       printf("Wrote Output[%u].OUT_PHASE_ADJ = %d (0x%08x)\n", hl_out_idx,
              hl_phase_adj, (uint32_t)hl_phase_adj);
     }
-
   } else if (do_wr_freq_get) {
     int64_t word = 0;
     int rr =
@@ -1379,7 +1753,6 @@ fprintf(stderr, "Using spidev: %s (hz=%u, mode=%d)\n",
       printf("DPLL_Freq_Write[%u].DPLL_WR_FREQ word_s42=%lld  (~%.9f ppb)\n",
              hl_dpll_idx, (long long)word, ppb);
     }
-
   } else if (do_wr_freq_set_word) {
     int rr = cm_write_dpll_wr_freq_s42(&g_cm_bus, (unsigned)hl_dpll_idx,
                                        hl_wr_word_s42, 1, 0);
@@ -1391,7 +1764,6 @@ fprintf(stderr, "Using spidev: %s (hz=%u, mode=%d)\n",
       printf("Wrote DPLL_Freq_Write[%u].DPLL_WR_FREQ word_s42=%lld\n",
              hl_dpll_idx, (long long)hl_wr_word_s42);
     }
-
   } else if (do_wr_freq_set_ppb) {
     double word_d = (hl_wr_ppb / 1e9) * (double)(1ULL << CM_WR_FREQ_FRAC_BITS);
     int64_t word = (int64_t)llround(word_d);
@@ -1407,7 +1779,6 @@ fprintf(stderr, "Using spidev: %s (hz=%u, mode=%d)\n",
           "Wrote DPLL_Freq_Write[%u].DPLL_WR_FREQ ~%.9f ppb (word_s42=%lld)\n",
           hl_dpll_idx, hl_wr_ppb, (long long)word);
     }
-
   } else if (do_prog_file) {
     fprintf(stderr, "Applying programming file: %s\n", prog_path);
     dpll_result_t r =

@@ -26,10 +26,10 @@ POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
 JOURNAL_LINES="${JOURNAL_LINES:-200}"
 
 # How many recent offset samples must be "tight"
-OFFSET_SAMPLES="${OFFSET_SAMPLES:-3}"
+OFFSET_SAMPLES="${OFFSET_SAMPLES:-10}"
 
 # "four digit lock" => abs(offset) <= 9999 ns by default
-OFFSET_ABS_MAX_NS="${OFFSET_ABS_MAX_NS:-9999}"
+OFFSET_ABS_MAX_NS="${OFFSET_ABS_MAX_NS:-500}"
 
 # PEROUT configuration (testptp)
 PPS_OUT_CH="${PPS_OUT_CH:-0}"
@@ -44,10 +44,19 @@ client_running() {
   systemctl is-active --quiet "$CLIENT_UNIT"
 }
 
+# Get the MainPID of the running service. Returns 0 or empty if not running.
+get_client_pid() {
+  systemctl show --property MainPID --value "$CLIENT_UNIT"
+}
+
 # Extract the most recent servo state from ptp4l logs (s0/s1/s2).
 # Prints "s2" etc. or empty if not found.
 current_servo_state() {
-  journalctl -u "$CLIENT_UNIT" -n "$JOURNAL_LINES" -o cat 2>/dev/null \
+  local pid
+  pid="$(get_client_pid)"
+  if [[ -z "$pid" || "$pid" == "0" ]]; then return; fi
+  
+  journalctl _PID="$pid" -n "$JOURNAL_LINES" -o cat 2>/dev/null \
     | grep -E 'master offset' \
     | tail -n 1 \
     | sed -nE 's/.*master offset[[:space:]]+-?[0-9]+[[:space:]]+(s[0-9]+)[[:space:]]+freq.*/\1/p'
@@ -56,7 +65,11 @@ current_servo_state() {
 # Print the last N "master offset" values (ns) from s2 lines, one per line.
 last_s2_offsets_ns() {
   local n="$1"
-  journalctl -u "$CLIENT_UNIT" -n "$JOURNAL_LINES" -o cat 2>/dev/null \
+  local pid
+  pid="$(get_client_pid)"
+  if [[ -z "$pid" || "$pid" == "0" ]]; then return; fi
+
+  journalctl _PID="$pid" -n "$JOURNAL_LINES" -o cat 2>/dev/null \
     | sed -nE 's/.*master offset[[:space:]]+(-?[0-9]+)[[:space:]]+s2[[:space:]]+freq.*/\1/p' \
     | tail -n "$n"
 }
@@ -124,6 +137,9 @@ fi
 
 pps_enabled=0
 FAIL_REASON=""
+
+# Ensure clean state at startup (disable potentially leftover PPS)
+disable_pps
 
 # Always try to disable PPS when exiting (best-effort).
 cleanup() {

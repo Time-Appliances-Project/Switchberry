@@ -421,7 +421,16 @@ def validate_config(cfg: TimingConfig) -> DerivedPlan:
             elif sma.name == "SMA2":
                 print(f"  {label}: OUTPUT, frequency={sma.frequency_hz} Hz (via Q10)")
             elif sma.name == "SMA3":
-                print(f"  {label}: OUTPUT, fixed 10MHz (V6: Q9/Ch5, SyncE freq-aligned - config ignored)")
+                freq = sma.frequency_hz if sma.frequency_hz is not None else 10_000_000
+                DCO_HZ = 500_000_000
+                divider = round(DCO_HZ / freq)
+                if divider < 1: divider = 1
+                actual_hz = DCO_HZ / divider
+                error_ppm = ((actual_hz - freq) / freq) * 1e6 if freq > 0 else 0
+                if abs(error_ppm) > 0.001:
+                    print(f"  {label}: OUTPUT, frequency={freq} Hz (via Q9/Ch5, output divider={divider}, actual={actual_hz:.3f} Hz, error={error_ppm:+.3f} ppm)")
+                else:
+                    print(f"  {label}: OUTPUT, frequency={freq} Hz (via Q9/Ch5, output divider={divider})")
             else:
                 print(f"  {label}: OUTPUT, frequency={sma.frequency_hz} Hz")
         else:
@@ -496,6 +505,8 @@ def run_wizard(path: str) -> None:
     gps_present = ans == "y"
     gps_role = None
     gps_priority = None
+    used_time_priorities: set = set()   # Ch6 (time domain) assigned priorities
+    used_freq_priorities: set = set()   # Ch5 (freq domain) assigned priorities
 
     if gps_present:
         print("GPS usage options:")
@@ -514,11 +525,16 @@ def run_wizard(path: str) -> None:
             print("GPS priority applies to:")
             print("  - Time domain (channels 5 & 6) always, if GPS is TIME_*")
             print("  - Frequency domain (channel 2) as well, if GPS is TIME_AND_FREQ.")
-            pr = input("GPS priority (0 = highest) [0]: ").strip() or "0"
+            # GPS TIME_AND_FREQ/TIME_ONLY → goes to Ch6 (time domain)
+            next_prio = 0
+            while next_prio in used_time_priorities:
+                next_prio += 1
+            pr = input(f"GPS time-domain priority (0 = highest) [{next_prio}]: ").strip() or str(next_prio)
             try:
                 gps_priority = int(pr)
             except ValueError:
-                gps_priority = 0
+                gps_priority = next_prio
+            used_time_priorities.add(gps_priority)
     gps_cfg = GpsConfig(present=gps_present, role=gps_role, priority=gps_priority)
 
     # Step 3: CM4 as time source (client/none)
@@ -532,11 +548,16 @@ def run_wizard(path: str) -> None:
             r = role_default
         print("CM4 priority applies to:")
         print("  - Time domain only (unless you pick TIME_AND_FREQ).")
-        pr = input("CM4 PPS priority (0 = highest) [1]: ").strip() or "1"
+        # CM4 TIME_ONLY/TIME_AND_FREQ → goes to Ch6 (time domain)
+        next_prio = 0
+        while next_prio in used_time_priorities:
+            next_prio += 1
+        pr = input(f"CM4 PPS time-domain priority (0 = highest) [{next_prio}]: ").strip() or str(next_prio)
         try:
             cm4_prio = int(pr)
         except ValueError:
-            cm4_prio = 2
+            cm4_prio = next_prio
+        used_time_priorities.add(cm4_prio)
         cm4_cfg = Cm4Config(
             used_as_source=True,
             role=r,
@@ -554,11 +575,16 @@ def run_wizard(path: str) -> None:
     print("\nStep 4: SyncE as frequency-only source")
     ans = input("Use SyncE as a frequency-only source (FREQ_ONLY)? (y/N): ").strip().lower()
     if ans == "y":
-        pr = input("SyncE frequency priority (0 = highest) [1]: ").strip() or "1"
+        # SyncE FREQ_ONLY → goes to Ch5 (freq domain)
+        next_prio = 0
+        while next_prio in used_freq_priorities:
+            next_prio += 1
+        pr = input(f"SyncE freq-domain priority (0 = highest) [{next_prio}]: ").strip() or str(next_prio)
         try:
             synce_prio = int(pr)
         except ValueError:
-            synce_prio = 2
+            synce_prio = next_prio
+        used_freq_priorities.add(synce_prio)
 
         p = input("SyncE front-panel recovery port (1-5) [1]: ").strip() or "1"
         try:
@@ -627,11 +653,22 @@ def run_wizard(path: str) -> None:
             if r not in ("TIME_ONLY", "FREQ_ONLY", "TIME_AND_FREQ"):
                 print("  Unknown role, defaulting to TIME_AND_FREQ.")
                 r = "TIME_AND_FREQ"
-            pr = input("  Priority (0 = highest) [2]: ").strip() or "2"
+            # Pick the right domain set based on role
+            if r == "FREQ_ONLY":
+                prio_set = used_freq_priorities
+                domain_label = "freq-domain"
+            else:
+                prio_set = used_time_priorities
+                domain_label = "time-domain"
+            next_prio = 0
+            while next_prio in prio_set:
+                next_prio += 1
+            pr = input(f"  {domain_label.capitalize()} priority (0 = highest) [{next_prio}]: ").strip() or str(next_prio)
             try:
                 prio = int(pr)
             except ValueError:
-                prio = 3
+                prio = next_prio
+            prio_set.add(prio)
             smas.append(
                 SmaConfig(
                     name=hw_name,   # STORE AS HW NAME
@@ -678,6 +715,8 @@ def run_wizard(path: str) -> None:
                 print("        Exact frequency references (e.g. 10MHz) are best.")
                 print("        Arbitrary frequencies may have PPM error.")
                 
+                DCO_HZ = 500_000_000  # Must match DCO_FREQ_HZ in apply_timing.py
+                
                 while True:
                     f_str = input("  Desired output frequency in Hz [10000000]: ").strip() or "10000000"
                     try:
@@ -688,6 +727,24 @@ def run_wizard(path: str) -> None:
                     if not (1 <= freq <= 250_000_000):
                         print("    Frequency must be between 1 and 250000000 Hz.")
                         continue
+                    
+                    # Show divider resolution warning
+                    divider = round(DCO_HZ / freq)
+                    if divider < 1: divider = 1
+                    actual_hz = DCO_HZ / divider
+                    error_ppm = ((actual_hz - freq) / freq) * 1e6
+                    
+                    if abs(error_ppm) > 0.001:
+                        print(f"\n    *** Divider Resolution Warning ***")
+                        print(f"    DCO = {DCO_HZ} Hz, Integer Divider = {divider}")
+                        print(f"    Requested: {freq} Hz")
+                        print(f"    Actual:    {actual_hz:.6f} Hz")
+                        print(f"    Error:     {error_ppm:+.3f} ppm")
+                        ok = input("    Accept this frequency? (y/n) [y]: ").strip().lower() or "y"
+                        if ok != "y":
+                            continue
+                    else:
+                        print(f"    Exact match: DCO / {divider} = {actual_hz:.0f} Hz")
                     break
 
                 smas.append(

@@ -31,11 +31,32 @@ There is also a small **monitor/repair daemon** (`fastlock_1pps_fix.sh`) that wo
   - Programs the DPLL input frequencies + channel priority lists via `dplltool`
   - Configures DPLL outputs (Q10/Q11) used to drive SMA2/SMA1
 
-- `software/clockmatrix/fastlock_1pps_fix.sh`  
-  Simple daemon monitor that checks DPLL lock state and **forces relock** when needed:
-  - **Channel 6** (Time/1PPS) can fail to fastlock after unlock events
-  - **Channel 5** (Frequency) can also get into unstable states
-  - This script detects those conditions and applies a “reset pulse” (FREERUN → NORMAL)
+- `software/clockmatrix/dpll/fastlock_1pps_fix.sh`  
+  **DPLL monitor and automatic relocker daemon.**  
+  Runs as `switchberry-dpll-monitor.service` and continuously monitors DPLL lock health.
+
+  **Why it exists:** The 8A34004 DPLL can get "stuck" in non-optimal states after input disturbances, power-up transients, or combo-bus frequency steps. Additionally, the hardware lock detector can falsely report LOCKED while the actual phase offset is well above the configured threshold (e.g. 380ns when the threshold is 100ns).
+
+  **Three decision triggers (Channel 6 only — Channel 5 is observe-only):**
+  1. **State flapping** — Channel state changes too many times within a sliding window → force relock
+  2. **Stuck unlocked** — Channel stays in LOCKREC/LOCKACQ too long without recovering → force relock
+  3. **Phase offset too large** — Channel reports LOCKED but `dplltool get-phase` shows the actual offset exceeds a trigger threshold (default 250ns) for a sustained period (default 20s) → force relock. Uses hysteresis: the timer only clears when phase drops below a lower clear threshold (default 150ns), preventing timer resets from minor dips around the boundary.
+
+  **Relock mechanism:** Cycles the channel `FREERUN → (wait) → NORMAL` to force the DPLL to re-acquire lock from scratch.
+
+  **Status file** (`/tmp/switchberry-clockmatrix.status`): 3-line file that other services (ts2phc, ptp4l guard scripts) can check:
+  - `OK` = system is in a valid steady state, not intervening
+  - `NOT_OK` = actively intervening, downstream consumers should pause
+
+  **Key configuration knobs** (at top of script):
+  | Variable | Default | Purpose |
+  |----------|---------|---------|
+  | `POLL_SEC` | 0.2s | Main loop poll interval |
+  | `STARTUP_AGGRESSIVE_SEC` | 60s | Use tighter thresholds after boot |
+  | `PHASE_THRESHOLD_SEC` | 250ns | Phase offset trigger threshold |
+  | `PHASE_CLEAR_THRESHOLD_SEC` | 150ns | Phase must drop below this to clear timer (hysteresis) |
+  | `PHASE_EXCEED_SEC` | 20s | How long phase must exceed trigger before relock |
+  | `FREQ_LOCK_EVENT_GPS_ACTION` | 1 | Force-reset GPS channels when Ch5 stably locks |
 
 ---
 
@@ -109,6 +130,25 @@ In V6, the outputs are strictly separated to prevent frequency vs phase conflict
 - **Q10**: Configurable frequency output for **SMA2**.
 
 > **Note**: Channel 2 is considered legacy in this architecture and is not actively managed by `apply_timing.py`.
+
+### Combo Bus Strategy & Independent Phase Locking (Feb 2026 Update)
+
+A key architectural decision in the V6 software stack involves when to slave the Time DPLL (Ch6) to the Frequency DPLL (Ch5).
+
+**The Problem:**
+When a system has both a high-quality frequency reference (SyncE on Ch5) and a separate time reference (PTP/GPS on Ch6), essentially tracking two different masters, slaving Ch6 to Ch5 creates a conflict. The SyncE frequency may drift relative to the PTP time source (e.g. due to PTP NIC oscillator wander or network PDV). If Ch6 is forced to follow Ch5's frequency while trying to align phase to PTP 1PPS, the loop dynamics fight, causing phase drift ("walking away") or instability ("bouncing" between LOCKREC/LOCKED).
+
+**The Solution:**
+`apply_timing.py` implements a smart strategy:
+1.  **If a Time Source (GPS/PTP/SMA 1PPS) is present:**
+    *   **Channel 6 runs independently.** It locks both frequency and phase directly to its 1PPS input.
+    *   This ensures Ch6 faithfully tracks the time source without interference from SyncE frequency drift.
+    *   Channel 5 runs independently on SyncE (if present) or slaves to Ch6 (if no SyncE).
+2.  **If ONLY Frequency Sources (SyncE/10MHz) are present:**
+    *   **Channel 6 slaves to Channel 5.**
+    *   Since there is no 1PPS input to track, Ch6 *must* derive its frequency from Ch5 to generate stable synthesized 1PPS output.
+
+This approach provides the best stability for PTP clocks while maintaining SyncE frequency quality on the dedicated frequency outputs.
 
 ---
 

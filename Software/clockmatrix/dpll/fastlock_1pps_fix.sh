@@ -2,22 +2,110 @@
 set -euo pipefail
 
 # ------------------------------------------------------------------------------
-# fastlock_1pps_fix.sh  (ClockMatrix 8A34004 monitor + relock workaround)
+# fastlock_1pps_fix.sh — ClockMatrix 8A34004 DPLL Monitor & Automatic Relocker
+# ------------------------------------------------------------------------------
 #
-# Status file semantics (HIGH LEVEL):
-#   - OK     => The system is in a valid steady state (LOCKED, UNLOCKED, NO_REF,
-#              FREERUN, etc.) and this script is NOT actively intervening.
-#   - NOT_OK => This script is actively intervening / has just intervened
-#              (i.e., it had to cycle one or more channels FREERUN->NORMAL).
+# OVERVIEW
+# --------
+# The Renesas 8A34004 DPLL can occasionally get "stuck" in non-optimal lock
+# states (LOCKREC, LOCKACQ, or flapping between states) after input
+# disturbances, power-up transients, or combo-bus frequency steps.  The
+# hardware's built-in lock detector can also declare LOCKED while the actual
+# phase offset is well above the configured lock threshold (observed at
+# 300-400ns when the threshold is 100ns).
 #
-# This is intentionally simple so other programs can just check line 1:
-#   if "NOT_OK" -> pause/stop consumers (ts2phc/ptp4l/etc)
-#   else        -> proceed (even if there is no reference / freerunning)
+# This script runs as a systemd daemon (switchberry-dpll-monitor.service) and
+# continuously monitors the DPLL channels.  When it detects a problem, it
+# intervenes by cycling the channel FREERUN → NORMAL to force the DPLL to
+# re-acquire lock from scratch.
 #
-# Status file (3 lines):
-#   1) OK | NOT_OK
-#   2) ISO-8601 timestamp
-#   3) short message
+#
+# MONITORED CHANNELS
+# ------------------
+#   Channel 5 (FREQ_CH)   — Frequency DPLL, locks to SyncE / 10MHz sources
+#   Channel 6 (GPS_CHANS) — Time/1PPS DPLL, locks to GPS / PTP 1PPS sources
+#
+#
+# DECISION TRIGGERS (in order of evaluation per poll cycle)
+# ---------------------------------------------------------
+#
+#   Decision 1: STATE FLAPPING
+#     If a channel's state changes ≥ N times within a sliding window
+#     (e.g. 6 changes in 5 seconds), it's flapping and unlikely to settle.
+#     → Force relock pulse.
+#
+#   Decision 2: STUCK UNLOCKED
+#     If a channel stays unlocked for longer than a threshold (e.g. 10-20s)
+#     without the state being explainable as "no reference present" (i.e.
+#     steady FREERUN with no state changes), it's stuck.
+#     → Force relock pulse.
+#
+#   Decision 3: PHASE OFFSET TOO LARGE WITH HYSTERESIS
+#     If a channel reports LOCKED but `dplltool get-phase` shows the absolute
+#     phase offset exceeds a trigger threshold (default 250ns) consistently for
+#     a sustained period (default 20s), the hardware lock detector is wrong.
+#     → Force relock pulse.
+#     Hysteresis: the exceed timer only clears when phase drops below a lower
+#     clear threshold (default 150ns).  Phase values in the dead zone between
+#     clear and trigger thresholds keep the timer running.
+#     This catches false-lock conditions observed on Channel 6 where the DPLL
+#     declares LOCKED at ~380ns offset instead of <100ns.
+#
+#   Note: Only Channel 6 (GPS_CHANS) is subject to relock decisions.
+#   Channel 5 (FREQ_CH) is observed for stable-lock edge detection (which can
+#   trigger GPS channel resets via combo-bus) but is never force-relocked.
+#
+#   Additionally, when Channel 5 first achieves stable lock, this script can
+#   optionally force-reset Channel 6 (GPS_CHANS), since the combo-bus
+#   frequency step from Ch5 locking may have disturbed Ch6's lock.
+#
+#
+# RELOCK PULSE MECHANISM
+# ----------------------
+#   1. Set channel operating state to FREERUN (via dplltool set_oper_state)
+#   2. Clear state-change sticky bit
+#   3. Wait a short pulse duration (200-400ms)
+#   4. Set channel operating state back to NORMAL
+#   5. Clear sticky bit again
+#   This forces the DPLL to restart lock acquisition from scratch.
+#
+#
+# STATUS FILE
+# -----------
+# Writes a 3-line status file (default: /tmp/switchberry-clockmatrix.status):
+#   Line 1: OK | NOT_OK
+#   Line 2: ISO-8601 timestamp
+#   Line 3: Short human-readable message
+#
+# Semantics:
+#   OK     → The system is in a valid steady state (LOCKED, FREERUN, no-ref,
+#            etc.) and this script is NOT actively intervening.
+#   NOT_OK → This script is actively intervening or just intervened.
+#            Downstream consumers (ts2phc, ptp4l) should pause.
+#
+# Other programs can simply check line 1 to gate their operation.
+#
+#
+# CONFIGURATION KNOBS
+# -------------------
+# All tunable parameters are defined as shell variables at the top of the
+# script.  The most important ones:
+#
+#   POLL_SEC                   — Main loop poll interval (default 0.2s)
+#   STARTUP_AGGRESSIVE_SEC     — Use tighter thresholds for this many seconds
+#                                after script start (default 60s)
+#   FREQ_CH / GPS_CHANS        — Which DPLL channels to monitor
+#   *_UNLOCK_SEC               — How long a channel can stay unlocked before
+#                                triggering a relock
+#   *_FLAP_COUNT / *_FLAP_WINDOW_SEC — Flapping detection sensitivity
+#   *_RESET_COOLDOWN_SEC       — Minimum time between relock pulses
+#   PHASE_THRESHOLD_SEC        — Phase offset trigger threshold for Decision 3
+#   PHASE_CLEAR_THRESHOLD_SEC  — Phase must drop below this to clear the timer
+#                                (hysteresis band between clear and trigger)
+#   PHASE_EXCEED_SEC           — How long phase must exceed trigger threshold
+#   PHASE_CHECK_INTERVAL_SEC   — How often to poll get-phase (avoid SPI spam)
+#   FREQ_LOCK_EVENT_GPS_ACTION — What to do when Ch5 stably locks:
+#                                0=nothing, 1=force reset GPS, 2=boost GPS monitoring
 #
 # Default status path: /tmp/switchberry-clockmatrix.status
 # ------------------------------------------------------------------------------
@@ -49,6 +137,16 @@ GPS_NOCHANGE_ACCEPT_SEC=10
 
 # Stable-lock definition for FREQ_CH (used for FREQ_CH->LOCKED event)
 FREQ_CH_STABLE_LOCK_SEC=2
+
+# --- Phase offset relock thresholds ---
+# If a channel reports LOCKED but get-phase exceeds this threshold consistently,
+# force a relock. This catches "false lock" where the DPLL hardware thinks it's
+# locked but the phase offset is too large.
+PHASE_THRESHOLD_SEC=250e-9       # 250 nanoseconds — trigger level
+PHASE_CLEAR_THRESHOLD_SEC=150e-9 # 150 nanoseconds — must drop below this to clear timer (hysteresis)
+PHASE_EXCEED_SEC=20              # must exceed threshold for this many seconds
+PHASE_CHECK_INTERVAL_SEC=2       # how often to check phase (avoid spamming SPI)
+PHASE_RELOCK_COOLDOWN_SEC=15     # cooldown after a phase-triggered relock
 
 # --- Startup aggressive thresholds ---
 FREQ_CH_UNLOCK_SEC_AGG=4
@@ -154,6 +252,11 @@ freq_stably_locked=0
 # GPS temporary boost after FREQ_CH locks
 gps_boost_until_s=0
 
+# Phase offset tracking (per channel)
+declare -A phase_exceed_since_s   # when phase first exceeded threshold (0 = not exceeding)
+declare -A last_phase_check_s     # last time we checked phase
+declare -A last_phase_reset_s     # last time we did a phase-triggered relock
+
 init_ch() {
   local ch="$1" t; t="$(now_s)"
   last_seen_s["$ch"]="$t"
@@ -162,6 +265,9 @@ init_ch() {
   flap_count["$ch"]=0
   unlock_since_s["$ch"]=0
   last_reset_s["$ch"]=0
+  phase_exceed_since_s["$ch"]=0
+  last_phase_check_s["$ch"]=0
+  last_phase_reset_s["$ch"]=0
   dpll_clear_statechg_sticky "$ch"
 }
 
@@ -238,7 +344,10 @@ update_unlock_timer() {
 }
 
 # "No ref present" acceptance:
-# If unlocked and hasn't had any state changes for N seconds, accept and do not reset.
+# If unlocked and hasn't had any state changes for N seconds, accept ONLY if the
+# state indicates no reference is present (FREERUN, HOLDOVER).
+# LOCKREC/LOCKACQ mean the DPLL sees a reference and is trying (but failing) to
+# lock — those should NOT be accepted; the relock logic should handle them.
 unlocked_is_acceptable_nochange() {
   local ch="$1" t="$2" st="$3" accept_sec="$4"
   if is_locked "$st"; then
@@ -248,23 +357,18 @@ unlocked_is_acceptable_nochange() {
   local lc="${last_change_s[$ch]}"
 
   # Only consider "acceptable no-ref" once the state has been steady long enough.
-  # (Before that, we're still waiting to see if it recovers / stabilizes.)
   if (( t - lc < accept_sec )); then
-	# If we've been stuck in LOCKREC for the full accept_sec window,
-	# do NOT accept it as "no ref present" (allow the reset logic to run).
     return 1
   fi
-    #log "CHECK: CHANNEL ${ch} in lockrec or lockacq"
-    if is_lockrec "$st"; then
-      #log "EVENT-DECIDE: CHANNEL ${ch} STUCK IN LOCKREC" 
-      return 0
-    fi
-    if is_lockacq "$st"; then
-      #log "EVENT-DECIDE: CHANNEL ${ch} STUCK IN LOCKACQ" 
-      return 0
-    fi
 
+  # LOCKREC = lost lock, in recovery mode, won't trigger fastlock — just drifts.
+  # LOCKACQ = acquiring lock, but can get stuck indefinitely.
+  # Both should trigger a relock if stuck long enough.
+  if is_lockrec "$st" || is_lockacq "$st"; then
+    return 1
+  fi
 
+  # FREERUN / HOLDOVER with no state changes = genuinely no reference present
   return 0
 }
 
@@ -385,6 +489,60 @@ monitor_channel() {
     fi
   fi
 
+  # Decision 3: Phase offset too large for too long
+  # Runs during LOCKED, LOCKREC, and LOCKACQ — the phase monitor returns valid
+  # data in all these states. This catches the LOCKED↔LOCKREC bouncing pattern
+  # where the DPLL can't settle and phase keeps drifting.
+  if is_locked "$st" || is_lockrec "$st" || is_lockacq "$st"; then
+    local lpc="${last_phase_check_s[$ch]:-0}"
+    if (( t - lpc >= PHASE_CHECK_INTERVAL_SEC )); then
+      last_phase_check_s["$ch"]="$t"
+      local phase_str; phase_str="$(dplltool get-phase "$ch" 2>/dev/null || echo "0")"
+      # phase_str is in seconds (e.g. 3.882000000000e-07)
+      # Compare absolute value against threshold using awk
+      local exceeds; exceeds="$(awk -v p="$phase_str" -v thr="$PHASE_THRESHOLD_SEC" \
+        'BEGIN { p_abs = (p < 0) ? -p : p; print (p_abs > thr) ? 1 : 0 }')"
+
+      if (( exceeds == 1 )); then
+        if (( phase_exceed_since_s["$ch"] == 0 )); then
+          phase_exceed_since_s["$ch"]="$t"
+          log "INFO: CH$ch state=$st phase=${phase_str}s exceeds threshold (${PHASE_THRESHOLD_SEC}s)"
+        fi
+        local pes="${phase_exceed_since_s[$ch]}"
+        local exceed_dur=$(( t - pes ))
+        if (( exceed_dur >= PHASE_EXCEED_SEC )); then
+          local lpr="${last_phase_reset_s[$ch]:-0}"
+          if (( t - lpr >= PHASE_RELOCK_COOLDOWN_SEC )); then
+            log "DECIDE: CH$ch state=$st phase=${phase_str}s > ${PHASE_THRESHOLD_SEC}s for ${exceed_dur}s -> relock"
+            last_phase_reset_s["$ch"]="$t"
+            force_reset_pulse "$ch" "$pulse"
+            phase_exceed_since_s["$ch"]=0
+          else
+            log "DECIDE: CH$ch phase relock needed but cooldown active"
+          fi
+        fi
+      else
+        # Phase is below trigger threshold. Apply hysteresis:
+        # only clear the timer if phase drops below the CLEAR threshold.
+        if (( phase_exceed_since_s["$ch"] > 0 )); then
+          local below_clear; below_clear="$(awk -v p="$phase_str" -v thr="$PHASE_CLEAR_THRESHOLD_SEC" \
+            'BEGIN { p_abs = (p < 0) ? -p : p; print (p_abs < thr) ? 1 : 0 }')"
+          if (( below_clear == 1 )); then
+            log "INFO: CH$ch phase=${phase_str}s dropped below clear threshold (${PHASE_CLEAR_THRESHOLD_SEC}s) — timer cleared"
+            phase_exceed_since_s["$ch"]=0
+          else
+            local pes="${phase_exceed_since_s[$ch]}"
+            local exceed_dur=$(( t - pes ))
+            log "INFO: CH$ch phase=${phase_str}s in dead zone (${PHASE_CLEAR_THRESHOLD_SEC}..${PHASE_THRESHOLD_SEC}s), timer still running (${exceed_dur}s/${PHASE_EXCEED_SEC}s)"
+          fi
+        fi
+      fi
+    fi
+  else
+    # FREERUN / HOLDOVER = no reference, phase reading is meaningless
+    phase_exceed_since_s["$ch"]=0
+  fi
+
   return 0
 }
 
@@ -455,10 +613,11 @@ main() {
   while true; do
     local t; t="$(now_s)"
 
-    # --- FREQ Channel first ---
+    # --- FREQ Channel: observe state only (no relock intervention) ---
+    # We still read Ch5 state for edge detection (combo-bus → GPS reset)
+    # and for status reporting, but we do NOT run monitor_channel on it.
     local st_freq; st_freq="$(dpll_get_state "$FREQ_CH")"
     update_freq_stable_lock_edge "$t" "$st_freq"
-    monitor_channel "$FREQ_CH" "$t" "$start_t" 0
 
     # --- GPS channels ---
     if (( GATE_GPS_ON_FREQ_LOCKED == 1 )) && [[ "$st_freq" != "LOCKED" ]]; then

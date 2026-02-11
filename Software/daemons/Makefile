@@ -84,7 +84,8 @@ SERVICES_ROLE_ORCH := \
 SERVICES_PTP := \
     ts2phc-switchberry.service \
     ptp4l-switchberry-gm.service \
-    ptp4l-switchberry-client.service
+    ptp4l-switchberry-client.service \
+    switchberry-cm4-pps-monitor.service
 
 # Everything we might want to stop/status (safe even if not running)
 SERVICES_ALL := $(SERVICES_PTP) $(SERVICES_ROLE_ORCH) $(SERVICES_GNSS) $(SERVICES_CORE)

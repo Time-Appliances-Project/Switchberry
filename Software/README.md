@@ -71,57 +71,36 @@ If you haven’t customized `/etc/startup-dpll.json`, the default setup is:
 ```bash
 cd ~/
 git clone https://github.com/Time-Appliances-Project/Switchberry
-cd Switchberry 
+cd Switchberry/Software 
+chmod +x sb-*.sh
 ```
 
 ### 2) Run the config wizard
-
-From the Switchberry repo directory:
-
-```bash
-cd ~/Switchberry/Software/clockmatrix
-python3 config.py wizard
-```
-
-After answering wizard questions, you can view a summary of the config and validate it:
+This script runs the wizard and automatically installs the generated configuration to `/etc/startup-dpll.json`.
 
 ```bash
-cd ~/Switchberry/Software/clockmatrix
-python3 config.py validate -c dpll-config.json
+./sb-config.sh
 ```
 
-### 3) Copy this setup file to default location
-
-This will define how switchberry will operate, including SMA operations and PTP operations
+### 3) Apply changes and restart services
+This script recompiles tools, installs services, and restarts the PTP stack.
 
 ```bash
-cd ~/Switchberry/Software/clockmatrix
-sudo cp dpll-config.json /etc/startup-dpll.json
+sudo ./sb-reinstall.sh
 ```
 
-### 4) Setup your ptp4l configuration (if using PTP)
-
-If using PTP4L as a client, change this file 
+### 4) Check Status
+Monitor DPLL lock state, PTP synchronization, and service health.
 
 ```bash
-~/Switchberry/Software/daemons/ptp4l-switchberry-client-uc.conf
+./sb-status.sh
 ```
 
-If using PTP4l as a Grandmaster, change this file
-
-```bash
-~/Switchberry/Software/daemons/ptp4l-switchberry-gm-uc.conf
-```
-
-### 5) Restart the Switchberry systemd processes
-
-Switchberry operation is managed and runs through systemd processes, this will restart them with this new config.
-
-```bash
-cd ~/Switchberry/Software/daemons
-sudo make install 
-sudo make restart
-```
+### 5) (Optional) Customize PTP configuration
+If you need to change PTP profiles (e.g. Unicast vs Multicast), edit the config files managed by the services:
+- Client: `~/Switchberry/Software/daemons/ptp4l-switchberry-client-uc.conf`
+- Grandmaster: `~/Switchberry/Software/daemons/ptp4l-switchberry-gm-uc.conf`
+Then run `sudo ./sb-reinstall.sh` to apply.
 
 
 
