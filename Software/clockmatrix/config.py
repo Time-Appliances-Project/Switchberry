@@ -474,19 +474,16 @@ def run_wizard(path: str) -> None:
     print("      - FREQ_ONLY       → affects frequency priority (Ch5) only")
     print("      - TIME_AND_FREQ   → affects both (Ch5 and Ch6)")
     print()
-    print("SMA Mapping (Rear Panel View):")
+    print("SMA Mapping:")
     print("  The wizard uses User/Rear-Panel numbering (SMA1..SMA4).")
-    print("  Internally, these map to Hardware/Schematic SMAs as follows:")
-    print("    User SMA1 <-> HW SMA4")
-    print("    User SMA2 <-> HW SMA3")
-    print("    User SMA3 <-> HW SMA2")
-    print("    User SMA4 <-> HW SMA1")
+    print("  (Advanced: See README for mapping to schematic names)")
     print()
-    print("SMA capabilities (based on User/Real numbering):")
-    print("  - User SMA1 (HW SMA4): Input-only.")
-    print("  - User SMA2 (HW SMA3): Fixed 10MHz Output (V6) / or Input.")
-    print("  - User SMA3 (HW SMA2): Input or Output (Arbitrary Freq via Q10).")
-    print("  - User SMA4 (HW SMA1): Input or Output (1PPS Phase Aligned). Special constraints if GM.")
+    print()
+    print("SMA capabilities:")
+    print("  - SMA1: Input-only.")
+    print("  - SMA2: Fixed 10MHz Output (V6) / or Input.")
+    print("  - SMA3: Input or Output (Arbitrary Freq via Q10).")
+    print("  - SMA4: Input or Output (1PPS Phase Aligned). Special constraints if GM.")
     print()
 
     # Step 1: CM4 PTP role
@@ -609,36 +606,36 @@ def run_wizard(path: str) -> None:
         user_name = f"SMA{i}"
         hw_name = user_to_hw_sma(user_name)
         
-        print(f"\nConfiguring {user_name} (Hardware {hw_name}):")
+        print(f"\nConfiguring {user_name}:")
         
         # Branch based on HW capabilities
         if hw_name == "SMA1":
             # User SMA4
             if role_str == "GM":
-                print(f"  Note: CM4 is PTP GM, so {user_name} (HW SMA1) cannot be used as an OUTPUT.")
+                print(f"  Note: CM4 is PTP GM, so {user_name} cannot be used as an OUTPUT.")
                 print("        (it shares the CM4 1PPS path). You may use it as INPUT or UNUSED.")
                 prompt = "  Direction (INPUT/UNUSED) [UNUSED]: "
                 allowed = {"INPUT", "UNUSED"}
             else:
-                print(f"  Note: {user_name} (HW SMA1) supports Input or Output (1PPS Phase Aligned).")
+                print(f"  Note: {user_name} supports Input or Output (1PPS Phase Aligned).")
                 prompt = "  Direction (INPUT/OUTPUT/UNUSED) [UNUSED]: "
                 allowed = {"INPUT", "OUTPUT", "UNUSED"}
                 
         elif hw_name == "SMA4":
             # User SMA1
-            print(f"  Note: {user_name} (HW SMA4) is INPUT-ONLY.")
+            print(f"  Note: {user_name} is INPUT-ONLY.")
             prompt = "  Direction (INPUT/UNUSED) [UNUSED]: "
             allowed = {"INPUT", "UNUSED"}
             
         elif hw_name == "SMA3":
             # User SMA2
-            print(f"  Note: {user_name} (HW SMA3) is Input or Output.")
+            print(f"  Note: {user_name} is Input or Output.")
             print("        In V6, Output is Fixed 10MHz (SyncE Freq).")
             prompt = "  Direction (INPUT/OUTPUT/UNUSED) [UNUSED]: "
             allowed = {"INPUT", "OUTPUT", "UNUSED"}
             
         else: # SMA2 (User SMA3)
-            print(f"  Note: {user_name} (HW SMA2) is Input or Output (Configurable Freq).")
+            print(f"  Note: {user_name} is Input or Output (Configurable Freq).")
             prompt = "  Direction (INPUT/OUTPUT/UNUSED) [UNUSED]: "
             allowed = {"INPUT", "OUTPUT", "UNUSED"}
 
@@ -657,9 +654,12 @@ def run_wizard(path: str) -> None:
             if r == "FREQ_ONLY":
                 prio_set = used_freq_priorities
                 domain_label = "freq-domain"
+                default_freq = 10000000
             else:
                 prio_set = used_time_priorities
                 domain_label = "time-domain"
+                default_freq = 1
+                
             next_prio = 0
             while next_prio in prio_set:
                 next_prio += 1
@@ -669,13 +669,27 @@ def run_wizard(path: str) -> None:
             except ValueError:
                 prio = next_prio
             prio_set.add(prio)
+            
+            # Prompt for Input Frequency
+            if r in ("FREQ_ONLY", "TIME_AND_FREQ"):
+                # Usually want to know nominal freq for lock
+                prompt_freq = f"  Input Frequency in Hz [{default_freq}]: "
+                f_str = input(prompt_freq).strip() or str(default_freq)
+                try:
+                    in_freq = int(f_str)
+                except ValueError:
+                    in_freq = default_freq
+            else:
+                # TIME_ONLY usually 1PPS
+                in_freq = 1
+
             smas.append(
                 SmaConfig(
                     name=hw_name,   # STORE AS HW NAME
                     direction=SmaDirection.INPUT.value,
                     role=r,
                     priority=prio,
-                    frequency_hz=None,
+                    frequency_hz=in_freq,
                 )
             )
         elif d == "OUTPUT":

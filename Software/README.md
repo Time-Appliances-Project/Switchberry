@@ -50,18 +50,28 @@ If you haven’t customized `/etc/startup-dpll.json`, the default setup is:
 ### Input priorities
 - **Time sources**
   1. **GPS** (highest priority for time)
-  2. **User SMA4** (HW SMA1) = 1PPS input (fallback time behind GPS)
+  2. **SMA4** = 1PPS input (fallback time behind GPS)
 
 - **Frequency sources**
-  1. **User SMA1** (HW SMA4) = 10MHz input (highest priority for frequency)
+  1. **SMA1** = 10MHz input (highest priority for frequency)
 
 ### Outputs
-- **User SMA3** (HW SMA2) = 1PPS output (or other frequency)
-- **User SMA2** (HW SMA3) = 10MHz output (**frequency-only**, V6 board - not phase-aligned)
+- **SMA3** = 1PPS output (or other frequency)
+- **SMA2** = 10MHz output (**frequency-only**, V6 board - not phase-aligned)
 
-> **V6 Board Note:** **User SMA2** (HW SMA3) is routed via Q9/Channel 5 (SyncE frequency channel) and only
+> **V6 Board Note:** **SMA2** is routed via Channel 5 (SyncE frequency channel) and only
 > provides frequency alignment, not phase alignment. For phase-aligned 1PPS output,
-> use **User SMA4** (HW SMA1) instead (which is routed via Q11/Channel 6).
+> use **SMA4** instead (which is routed via Channel 6).
+
+### Advanced: Hardware SMA Mapping
+For users debugging schematics or low-level GPIO code, here is the mapping between Rear-Panel labels (User) and Schematic labels (Hardware):
+
+| User Label (Rear) | Hardware Label (Schematic) |
+| :--- | :--- |
+| **SMA1** | SMA4 |
+| **SMA2** | SMA3 |
+| **SMA3** | SMA2 |
+| **SMA4** | SMA1 |
 
 ---
 

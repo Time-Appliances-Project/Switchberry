@@ -394,7 +394,7 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
     # Map sources in the plan to DPLL logical input indices, checking for conflicts
     used_inputs: Dict[int, str] = {}  # logical_input_idx (1..4) -> source_name
 
-    def register_source_input(source_name: str, role: TimeFreqRole) -> int:
+    def register_source_input(source_name: str, role: TimeFreqRole, manual_freq_hz: int = None) -> int:
         # Logical index (1..4) based on your board wiring / source mapping
         logical_idx = map_source_to_input_idx(source_name)
 
@@ -406,10 +406,15 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
             )
         used_inputs[logical_idx] = source_name
 
-        # Set nominal input frequency for this DPLL *physical* input, based on the source
-        freq_hz = nominal_input_freq_hz(source_name, role)
+        # Set nominal input frequency for this DPLL *physical* input
+        if manual_freq_hz is not None:
+            freq_hz = manual_freq_hz
+        else:
+            freq_hz = nominal_input_freq_hz(source_name, role)
+            
         phys_idx = logical_to_physical_input_idx(logical_idx)
 
+        print(f"  Configuring DPLL Input {logical_idx} (Phys {phys_idx}) for {source_name} @ {freq_hz} Hz")
         run(["dplltool", "set-input-freq", str(phys_idx), str(freq_hz)], dry_run=dry_run)
         return logical_idx
 
@@ -421,8 +426,19 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
     
     for src in all_plan_inputs:
         if src.name not in unique_sources:
+            # Determine frequency
+            freq_to_set = None
+            
+            # If it's an SMA, check if user provided a specific input frequency
+            if src.name.startswith("SMA"):
+                # find sma config in cfg.smas
+                # Note: config.py ensures name match
+                sma_cfg = next((s for s in cfg.smas if s.name == src.name), None)
+                if sma_cfg and sma_cfg.frequency_hz is not None:
+                     freq_to_set = sma_cfg.frequency_hz
+            
             # Register this source's physical input frequency
-            idx_logic = register_source_input(src.name, src.role)
+            idx_logic = register_source_input(src.name, src.role, manual_freq_hz=freq_to_set)
             unique_sources[src.name] = (idx_logic, src.role)
 
     # ------------------------------------------------------------------
