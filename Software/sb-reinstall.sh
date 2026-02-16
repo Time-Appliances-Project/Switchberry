@@ -47,7 +47,7 @@ fi
 # 4. Restart Services
 echo "[4/4] Restarting services..."
 if [[ -d "$SOFTWARE_DIR/daemons" ]]; then
-    (cd "$SOFTWARE_DIR/daemons" && sudo make restart)
+    (cd "$SOFTWARE_DIR/daemons" && sudo make restart && sudo make enable)
 else
     echo "Warning: daemons directory not found."
 fi
