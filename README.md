@@ -11,6 +11,50 @@ Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platf
 
 ---
 
+## Quick Start
+
+### Out-of-the-Box Behavior
+
+With no configuration, Switchberry works as a **plug-and-play Layer 2 unmanaged Ethernet switch** with **PTP hardware transparent clock** enabled:
+
+- **All 5 front-panel RJ45 ports** are on the same switch plane and forward traffic at line rate — just plug in Ethernet cables
+- The CM4 is connected to the switch via an **internal port that is always up**, so **any front-panel port** can be used to reach the CM4 over the network
+- **PTP transparent clock** is active by default — PTP packets are forwarded with hardware residence-time correction, no setup needed
+- No VLANs, IP configuration, or switch management required to start using it as a switch
+
+### Accessing the Raspberry Pi CM4
+
+**Default login:** `pi` / `password`
+
+The CM4 is available through three interfaces:
+
+| Method | Connector | Details |
+| :--- | :--- | :--- |
+| **Ethernet (DHCP)** | Any front-panel RJ45 port | CM4 obtains an IP via DHCP. SSH in with `ssh pi@<ip-address>` — use `find_switchberry.py` or check your router to find the IP. |
+| **Serial console** | Micro-USB (side panel) | Provides a UART console to the CM4. On a fresh SD card image, add `enable_uart=1` to `config.txt` first. |
+| **Display + keyboard** | Micro-HDMI + USB-A | Connect a monitor via micro-HDMI and a keyboard via USB-A for direct console/desktop access. |
+
+> **Tip:** Use `find_switchberry.py` from your PC to automatically discover Switchberry devices on your LAN:
+> ```bash
+> python3 find_switchberry.py
+> ```
+
+### Customize & Monitor
+
+Once logged in, the software lives in `~/Switchberry/Software/`:
+
+```bash
+./sb-config.sh          # Interactive wizard — configure PTP role, timing sources, SMA routing
+sudo ./sb-reinstall.sh  # Recompile, install, and restart all services with your new config
+./sb-status.sh          # Check DPLL lock state, PTP sync, and service health from the CLI
+```
+
+A **web status dashboard** also runs on port **8080** — open `http://<switchberry-ip>:8080` in any browser on the same network to see live system status.
+
+For the full guide, see the **[Software Quick Start Guide](Software/README.md)**.
+
+---
+
 ## Order
 
 Coming soon!!!
