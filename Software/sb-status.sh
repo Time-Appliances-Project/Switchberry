@@ -40,6 +40,7 @@ SERVICES=(
     "switchberry-dpll-monitor.service"
     "switchberry-ptp-role.service"
     "ts2phc-switchberry.service"
+    "switchberry-status-web.service"
 )
 
 for svc in "${SERVICES[@]}"; do

@@ -49,4 +49,4 @@ fi
 echo "========================================"
 echo "           Configuration Done           "
 echo "========================================"
-echo "Tip: Run ./sb-reinstall.sh or restart services to apply changes."
+echo "Tip: Run ./sb-reinstall.sh to apply network, PTP, and timing changes."

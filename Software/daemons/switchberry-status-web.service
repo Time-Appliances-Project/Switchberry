@@ -1,0 +1,13 @@
+# /lib/systemd/system/switchberry-status-web.service
+[Unit]
+Description=Switchberry Status Web Server (port 8080)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/sbin/sb_status_web.py --port 8080 --https-port 8443
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

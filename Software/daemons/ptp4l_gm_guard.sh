@@ -18,7 +18,7 @@ PTP4L_NOT_OK_ACTION="${PTP4L_NOT_OK_ACTION:-stop}"
 # but only in "degrade" mode. Default off.
 PTP4L_ALLOW_HOLDOVER="${PTP4L_ALLOW_HOLDOVER:-0}"
 
-PTP4L_CMD=(/usr/sbin/ptp4l -f /etc/switchberry/ptp4l-switchberry-gm-uc.conf -m)
+PTP4L_CMD=(/usr/sbin/ptp4l -f /etc/switchberry/ptp4l-switchberry-gm.conf -m)
 
 # pmc settings (only used if PTP4L_NOT_OK_ACTION=degrade)
 PMC_SOCK="${PMC_SOCK:-/var/run/ptp4l}"

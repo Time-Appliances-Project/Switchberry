@@ -106,10 +106,23 @@ Monitor DPLL lock state, PTP synchronization, and service health.
 ./sb-status.sh
 ```
 
-### 5) (Optional) Customize PTP configuration
+### 5) Web Status Dashboard
+A built-in web server runs on port **8080** (HTTP) and **8443** (HTTPS), showing a live dashboard with system identity, configuration, service status, DPLL state, and PTP sync info. It auto-refreshes every 10 seconds.
+
+From any browser on the same network, open:
+```
+http://<switchberry-ip>:8080
+```
+
+> **Tip:** Use the `find_switchberry.py` script (in the repo root) from your PC to automatically discover Switchberry devices on your LAN:
+> ```bash
+> python3 find_switchberry.py
+> ```
+
+### 6) (Optional) Customize PTP configuration
 If you need to change PTP profiles (e.g. Unicast vs Multicast), edit the config files managed by the services:
-- Client: `~/Switchberry/Software/daemons/ptp4l-switchberry-client-uc.conf`
-- Grandmaster: `~/Switchberry/Software/daemons/ptp4l-switchberry-gm-uc.conf`
+- Client: `~/Switchberry/Software/daemons/ptp4l-switchberry-client.conf`
+- Grandmaster: `~/Switchberry/Software/daemons/ptp4l-switchberry-gm.conf`
 Then run `sudo ./sb-reinstall.sh` to apply.
 
 

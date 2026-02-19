@@ -60,24 +60,46 @@ class SmaConfig:
 
 
 @dataclass
+class NetworkConfig:
+    mode: str = "DHCP"                # "DHCP" or "STATIC"
+    ip_address: Optional[str] = None
+    cidr: Optional[int] = None
+    gateway: Optional[str] = None
+    dns: Optional[str] = None
+
+
+@dataclass
+class PtpConfig:
+    transport: str = "UNICAST"        # "UNICAST" or "MULTICAST"
+    master_ip: Optional[str] = None   # Only for CLIENT + UNICAST
+
+
+@dataclass
 class TimingConfig:
     ptp_role: str                     # PtpRole value
     gps: GpsConfig
     cm4: Cm4Config
     synce: SyncEConfig
     smas: List[SmaConfig]
+    network: NetworkConfig = None      # eth0 network config (optional, defaults to DHCP)
+    ptp: PtpConfig = None              # PTP transport config (optional, defaults to UNICAST)
 
 
 # ---------- Helper: serialize / deserialize ----------
 
 def config_to_json_dict(cfg: TimingConfig) -> dict:
-    return {
+    d = {
         "ptp_role": cfg.ptp_role,
         "gps": asdict(cfg.gps),
         "cm4": asdict(cfg.cm4),
         "synce": asdict(cfg.synce),
         "smas": [asdict(s) for s in cfg.smas],
     }
+    if cfg.network is not None:
+        d["network"] = asdict(cfg.network)
+    if cfg.ptp is not None:
+        d["ptp"] = asdict(cfg.ptp)
+    return d
 
 
 def config_from_json_dict(data: dict) -> TimingConfig:
@@ -85,12 +107,17 @@ def config_from_json_dict(data: dict) -> TimingConfig:
     cm4 = Cm4Config(**data["cm4"])
     synce = SyncEConfig(**data["synce"])
     smas = [SmaConfig(**s) for s in data["smas"]]
+    # Backward compat: older JSON files may not have 'network' or 'ptp'
+    network = NetworkConfig(**data["network"]) if "network" in data else NetworkConfig()
+    ptp = PtpConfig(**data["ptp"]) if "ptp" in data else PtpConfig()
     return TimingConfig(
         ptp_role=data["ptp_role"],
         gps=gps,
         cm4=cm4,
         synce=synce,
         smas=smas,
+        network=network,
+        ptp=ptp,
     )
 
 
@@ -486,6 +513,32 @@ def run_wizard(path: str) -> None:
     print("  - SMA4: Input or Output (1PPS Phase Aligned). Special constraints if GM.")
     print()
 
+    # Step 0: Network (eth0) configuration
+    print("Step 0: eth0 Network Configuration")
+    print("  DHCP   : Obtain IP automatically from network.")
+    print("  STATIC : Set a fixed IP address.")
+    net_mode = input("Network mode (DHCP/STATIC) [DHCP]: ").strip().upper() or "DHCP"
+    if net_mode not in ("DHCP", "STATIC"):
+        print("Unknown mode, defaulting to DHCP.")
+        net_mode = "DHCP"
+    
+    net_ip = None
+    net_cidr = None
+    net_gw = None
+    net_dns = None
+    if net_mode == "STATIC":
+        net_ip = input("  IP address (e.g. 192.168.1.100): ").strip()
+        cidr_str = input("  Subnet prefix length (e.g. 24): ").strip() or "24"
+        try:
+            net_cidr = int(cidr_str)
+        except ValueError:
+            net_cidr = 24
+        net_gw = input("  Gateway (e.g. 192.168.1.1): ").strip() or None
+        net_dns = input("  DNS server (optional, e.g. 8.8.8.8): ").strip() or None
+    
+    network_cfg = NetworkConfig(mode=net_mode, ip_address=net_ip, cidr=net_cidr, gateway=net_gw, dns=net_dns)
+    print()
+
     # Step 1: CM4 PTP role
     print("Step 1: CM4 PTP role")
     print("  GM     : CM4 is a PTP Grandmaster; PPS to CM4 comes from DPLL.")
@@ -495,6 +548,26 @@ def run_wizard(path: str) -> None:
     if role_str not in ("GM", "CLIENT", "NONE"):
         print("Unknown role, defaulting to NONE.")
         role_str = "NONE"
+
+    # Step 1b: PTP transport (only if GM or CLIENT)
+    ptp_transport = "UNICAST"
+    ptp_master_ip = None
+    if role_str in ("GM", "CLIENT"):
+        print("\nPTP Transport:")
+        print("  UNICAST   : Point-to-point PTP (recommended for most deployments).")
+        print("  MULTICAST : Standard multicast PTP (simpler, but noisier on the network).")
+        ptp_transport = input("  PTP transport (UNICAST/MULTICAST) [UNICAST]: ").strip().upper() or "UNICAST"
+        if ptp_transport not in ("UNICAST", "MULTICAST"):
+            print("  Unknown transport, defaulting to UNICAST.")
+            ptp_transport = "UNICAST"
+        
+        if role_str == "CLIENT" and ptp_transport == "UNICAST":
+            ptp_master_ip = input("  GM IP address (unicast master): ").strip()
+            if not ptp_master_ip:
+                print("  Warning: No GM IP specified. You will need to edit the config later.")
+                ptp_master_ip = "10.1.1.11"  # Fallback default
+    
+    ptp_cfg = PtpConfig(transport=ptp_transport, master_ip=ptp_master_ip)
 
     # Step 2: GPS
     print("\nStep 2: GPS presence and usage")
@@ -811,6 +884,8 @@ def run_wizard(path: str) -> None:
         cm4=cm4_cfg,
         synce=synce_cfg,
         smas=smas,
+        network=network_cfg,
+        ptp=ptp_cfg,
     )
     save_config(path, cfg)
     print("\nYou can now run:")

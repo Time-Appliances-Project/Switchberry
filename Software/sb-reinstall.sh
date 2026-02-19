@@ -44,8 +44,25 @@ else
     exit 1
 fi
 
-# 4. Restart Services
-echo "[4/4] Restarting services..."
+# 4. Generate PTP config files
+echo "[4/6] Generating PTP config files..."
+CONF_JSON="/etc/startup-dpll.json"
+if [[ -f "$SOFTWARE_DIR/clockmatrix/generate_ptp_conf.py" ]] && [[ -f "$CONF_JSON" ]]; then
+    sudo python3 "$SOFTWARE_DIR/clockmatrix/generate_ptp_conf.py" -c "$CONF_JSON"
+else
+    echo "Warning: generate_ptp_conf.py or config not found, skipping."
+fi
+
+# 5. Apply network (eth0) configuration
+echo "[5/6] Applying network configuration..."
+if [[ -f "$SOFTWARE_DIR/clockmatrix/apply_network.py" ]] && [[ -f "$CONF_JSON" ]]; then
+    sudo python3 "$SOFTWARE_DIR/clockmatrix/apply_network.py" -c "$CONF_JSON"
+else
+    echo "Warning: apply_network.py or config not found, skipping."
+fi
+
+# 6. Restart Services
+echo "[6/6] Restarting services..."
 if [[ -d "$SOFTWARE_DIR/daemons" ]]; then
     (cd "$SOFTWARE_DIR/daemons" && sudo make restart && sudo make enable)
 else

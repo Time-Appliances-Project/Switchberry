@@ -33,7 +33,8 @@ SERVICE_FILES := \
     ptp4l-switchberry-gm.service \
     ptp4l-switchberry-client.service \
     switchberry-cm4-pps-monitor.service \
-    gpspipe-socat.service
+    gpspipe-socat.service \
+    switchberry-status-web.service
 
 # Helper scripts in this directory that should go into /usr/local/sbin
 SCRIPT_FILES := \
@@ -46,8 +47,8 @@ SCRIPT_FILES := \
 # Timing/PTP config files that should go into /etc/switchberry
 CONF_FILES := \
     ts2phc-switchberry.conf \
-    ptp4l-switchberry-gm-uc.conf \
-    ptp4l-switchberry-client-uc.conf
+    ptp4l-switchberry-gm.conf \
+    ptp4l-switchberry-client.conf
 
 # GPSD default config template in this directory (optional)
 GPSD_CONF_SRC := switchberry-gpsd.conf
@@ -69,7 +70,8 @@ CONF_FILES_MISSING    := $(filter-out $(CONF_FILES_EXISTING),$(CONF_FILES))
 SERVICES_CORE := \
     switchberry-apply-timing.service \
     switchberry-full-init.service \
-    switchberry-dpll-monitor.service
+    switchberry-dpll-monitor.service \
+    switchberry-status-web.service
 
 # GNSS plumbing (optional; gpsd.service is usually provided by the OS image)
 SERVICES_GNSS := \
