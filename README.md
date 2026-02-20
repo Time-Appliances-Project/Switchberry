@@ -11,6 +11,32 @@ Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platf
 
 ---
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+  - [Out-of-the-Box Behavior](#out-of-the-box-behavior)
+  - [Accessing the Raspberry Pi CM4](#accessing-the-raspberry-pi-cm4)
+  - [Customize & Monitor](#customize--monitor)
+- [Key Features](#key-features)
+- [Hardware Overview](#hardware-overview)
+- [Timing & Sync Capabilities](#timing--sync-capabilities)
+- [Typical Use Cases](#typical-use-cases)
+- [Notes](#notes)
+- [License](#license)
+
+**Software & Tools**
+
+| Guide | Description |
+| :--- | :--- |
+| [Software Quick Start](Software/README.md) | Timing/PTP setup, config wizard, detailed from-scratch install |
+| [Switch CLI](Software/switch/README.md) | KSZ9567 port status, counters, and init via SPI |
+| [Daemons & Services](Software/daemons/README.md) | Systemd service chain, boot sequence, Makefile control |
+| [ClockMatrix Utilities](Software/clockmatrix/README.md) | dplltool, config.py wizard, apply_timing.py, DPLL monitor |
+| [Enclosure](Enclosure/README.md) | Enclosure design files |
+| [Partial Schematic](PartialSchematic/README.md) | Board schematic reference |
+
+---
+
 ## Quick Start
 
 ### Out-of-the-Box Behavior

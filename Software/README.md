@@ -2,6 +2,17 @@
 
 This guide gets you from “fresh install” to a working timing/PTP setup, and shows how to customize behavior using the `config.py` wizard and the daemon Makefile.
 
+**↑ [Back to main README](../README.md)**
+
+## Table of Contents
+
+- [System Overview](#system-overview)
+- [Default behavior (out of the box)](#default-behavior-out-of-the-box)
+- [Quick start: customize your timing/PTP setup](#quick-start-customize-your-timingptp-setup)
+- [Detailed setup](#detailed-setup)
+
+**Related Guides:** [Switch CLI](switch/README.md) · [Daemons & Services](daemons/README.md) · [ClockMatrix Utilities](clockmatrix/README.md)
+
 ### System Overview
 
 ```mermaid
