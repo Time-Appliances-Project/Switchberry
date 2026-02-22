@@ -57,7 +57,7 @@ The CM4 is available through three interfaces:
 | Method | Connector | Details |
 | :--- | :--- | :--- |
 | **Ethernet (DHCP)** | Any front-panel RJ45 port | CM4 obtains an IP via DHCP. SSH in with `ssh pi@<ip-address>` — use `find_switchberry.py` or check your router to find the IP. |
-| **Serial console** | Micro-USB (side panel) | Provides a UART console to the CM4. On a fresh SD card image, add `enable_uart=1` to `config.txt` first. |
+| **Serial console** | Micro-USB (side panel) | Appears as a USB UART. Connect with **PuTTY** or **Tera Term** (Windows) or **tio** (Linux) at **115200 baud**. On a fresh SD card image, add `enable_uart=1` to `config.txt` first. |
 | **Display + keyboard** | Micro-HDMI + USB-A | Connect a monitor via micro-HDMI and a keyboard via USB-A for direct console/desktop access. |
 
 > **Tip:** Use `find_switchberry.py` from your PC to automatically discover Switchberry devices on your LAN:
@@ -71,7 +71,7 @@ Once logged in, the software lives in `~/Switchberry/Software/`:
 
 ```bash
 ./sb-config.sh          # Interactive wizard — configure PTP role, timing sources, SMA routing
-sudo ./sb-reinstall.sh  # Recompile, install, and restart all services with your new config
+sudo ./sb-reinstall.sh  # Reinstall & restart (runs in background — safe over SSH)
 ./sb-status.sh          # Check DPLL lock state, PTP sync, and service health from the CLI
 ```
 

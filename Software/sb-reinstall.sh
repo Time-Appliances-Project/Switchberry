@@ -2,33 +2,59 @@
 set -euo pipefail
 
 # sb-reinstall.sh
-# Automates the full re-installation workflow for Switchberry software:
-# 1. Reset DPLL hardware config (force reload from EEPROM/Default)
-# 2. Stop running services
-# 3. Rebuild and install all software (using install_all.sh)
-# 4. Restart services
+# Automates the full re-installation workflow for Switchberry software.
+#
+# IMPORTANT: Step 1 resets the DPLL, which disrupts the KSZ9567 clock tree.
+# If you are SSH'd into the CM4 through the switch, your session WILL drop.
+# To avoid interrupting the reinstall, this script automatically runs the
+# real work in the background (via nohup) and logs progress to a file.
+# The script is safe to run over SSH — it will survive the disconnect.
 
 SOFTWARE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE="/tmp/sb-reinstall.log"
+
+# ── If we are the foreground invocation, re-exec ourselves in the background ──
+if [[ "${_SB_REINSTALL_BG:-}" != "1" ]]; then
+    export _SB_REINSTALL_BG=1
+    echo "========================================"
+    echo "    Switchberry Reinstall Automation    "
+    echo "========================================"
+    echo ""
+    echo "Reinstall is running in the background so it survives SSH disconnects."
+    echo "  Log file : $LOG_FILE"
+    echo "  Monitor  : tail -f $LOG_FILE"
+    echo ""
+    echo "NOTE: If you are connected via the Ethernet switch, your SSH session"
+    echo "      will drop when the DPLL resets. This is normal — the reinstall"
+    echo "      will continue in the background. Reconnect after ~30 seconds."
+    echo ""
+    nohup sudo bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
+    disown
+    exit 0
+fi
+
+# ── Background worker (runs detached) ──
 DPLLTOOL="$SOFTWARE_DIR/clockmatrix/dpll/dplltool"
 
 echo "========================================"
-echo "    Switchberry Reinstall Automation    "
+echo "    Switchberry Reinstall (background)  "
+echo "    $(date)                              "
 echo "========================================"
 
 # 1. Reset DPLL
-# 0xc012 = DPLL_MODE register. 0x5a = Trigger EEPROM Reload / Reset?
-# User specified: dplltool --write 0xc012 0x5a
+# 0xc012 = DPLL_MODE register. 0x5a = Trigger EEPROM Reload / Reset
+# WARNING: This disrupts the KSZ9567 clock tree and will break Ethernet.
 if [[ -x "$DPLLTOOL" ]]; then
-    echo "[1/4] Resetting DPLL configuration..."
+    echo "[1/6] Resetting DPLL configuration..."
     "$DPLLTOOL" --write 0xc012 0x5a
     echo "DPLL reset command sent."
     sleep 1
 else
-    echo "[1/4] Warning: dplltool not found at $DPLLTOOL. Skipping DPLL reset."
+    echo "[1/6] Warning: dplltool not found at $DPLLTOOL. Skipping DPLL reset."
 fi
 
 # 2. Stop Services
-echo "[2/4] Stopping services..."
+echo "[2/6] Stopping services..."
 if [[ -d "$SOFTWARE_DIR/daemons" ]]; then
     (cd "$SOFTWARE_DIR/daemons" && sudo make stop) || echo "Warning: 'make stop' returned error (ignoring)."
 else
@@ -36,7 +62,7 @@ else
 fi
 
 # 3. Install All
-echo "[3/4] Building and Installing software..."
+echo "[3/6] Building and Installing software..."
 if [[ -f "$SOFTWARE_DIR/install_all.sh" ]]; then
     bash "$SOFTWARE_DIR/install_all.sh" -y
 else
@@ -70,5 +96,6 @@ else
 fi
 
 echo "========================================"
-echo "           Reinstall Complete           "
+echo "    Reinstall Complete — $(date)        "
 echo "========================================"
+
