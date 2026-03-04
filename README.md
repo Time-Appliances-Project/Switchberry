@@ -11,7 +11,17 @@ Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platf
 
 ---
 
+## Order
+
+**Switchberry is available for purchase on Tindie:**
+
+👉 **[Buy Switchberry on Tindie](https://www.tindie.com/products/timeappliances/switchberry/)**
+
+---
+
 ## Table of Contents
+
+- [Order](#order)
 
 - [Quick Start](#quick-start)
   - [Out-of-the-Box Behavior](#out-of-the-box-behavior)
@@ -78,12 +88,6 @@ sudo ./sb-reinstall.sh  # Reinstall & restart (runs in background — safe over 
 A **web status dashboard** also runs on port **8080** — open `http://<switchberry-ip>:8080` in any browser on the same network to see live system status.
 
 For the full guide, see the **[Software Quick Start Guide](Software/README.md)**.
-
----
-
-## Order
-
-Coming soon!!!
 
 ---
 
