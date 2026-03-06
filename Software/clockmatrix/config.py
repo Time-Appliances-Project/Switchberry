@@ -72,6 +72,7 @@ class NetworkConfig:
 class PtpConfig:
     transport: str = "UNICAST"        # "UNICAST" or "MULTICAST"
     master_ip: Optional[str] = None   # Only for CLIENT + UNICAST
+    time_traceable: bool = True       # GM: advertise timeTraceable flag
 
 
 @dataclass
@@ -566,8 +567,18 @@ def run_wizard(path: str) -> None:
             if not ptp_master_ip:
                 print("  Warning: No GM IP specified. You will need to edit the config later.")
                 ptp_master_ip = "10.1.1.11"  # Fallback default
+
+    # Step 1c: TIME_TRACEABLE (only for GM)
+    ptp_time_traceable = True
+    if role_str == "GM":
+        print("\nTime Traceable Flag:")
+        print("  If this GM is disciplined by GPS/GNSS, set to TRUE (default).")
+        print("  This tells PTP clients that the time source is traceable to UTC.")
+        print("  Set to FALSE only if this GM is free-running (no GPS/GNSS).")
+        tt_ans = input("  Advertise timeTraceable? (Y/n) [Y]: ").strip().lower()
+        ptp_time_traceable = tt_ans != "n"
     
-    ptp_cfg = PtpConfig(transport=ptp_transport, master_ip=ptp_master_ip)
+    ptp_cfg = PtpConfig(transport=ptp_transport, master_ip=ptp_master_ip, time_traceable=ptp_time_traceable)
 
     # Step 2: GPS
     print("\nStep 2: GPS presence and usage")

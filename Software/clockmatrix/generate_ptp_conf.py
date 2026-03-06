@@ -17,8 +17,11 @@ DEFAULT_CONFIG = "/etc/startup-dpll.json"
 DEFAULT_OUTDIR = "/etc/switchberry"
 
 
-def generate_gm_unicast_conf() -> str:
-    return """\
+def generate_gm_unicast_conf(time_traceable: bool = True) -> str:
+    tt = 1 if time_traceable else 0
+    clock_class = 6 if time_traceable else 248
+    time_source = "0x20" if time_traceable else "0xa0"  # GPS : INTERNAL_OSCILLATOR
+    return f"""\
 [global]
 serverOnly\t\t\t1
 hybrid_e2e\t\t\t0
@@ -30,12 +33,19 @@ tx_timestamp_timeout\t\t10000
 ptp_minor_version\t\t0
 utc_offset\t\t\t37
 leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
+timeTraceable\t\t\t{tt}
+frequencyTraceable\t\t{tt}
+clockClass\t\t\t{clock_class}
+timeSource\t\t\t{time_source}
 [eth0]
 """
 
 
-def generate_gm_multicast_conf() -> str:
-    return """\
+def generate_gm_multicast_conf(time_traceable: bool = True) -> str:
+    tt = 1 if time_traceable else 0
+    clock_class = 6 if time_traceable else 248
+    time_source = "0x20" if time_traceable else "0xa0"
+    return f"""\
 [global]
 serverOnly\t\t\t1
 hybrid_e2e\t\t\t0
@@ -45,6 +55,10 @@ tx_timestamp_timeout\t\t10000
 ptp_minor_version\t\t0
 utc_offset\t\t\t37
 leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
+timeTraceable\t\t\t{tt}
+frequencyTraceable\t\t{tt}
+clockClass\t\t\t{clock_class}
+timeSource\t\t\t{time_source}
 [eth0]
 """
 
@@ -119,14 +133,15 @@ def main():
     ptp = data.get("ptp", {})
     transport = ptp.get("transport", "UNICAST").upper()
     master_ip = ptp.get("master_ip", "10.1.1.11")
+    time_traceable = ptp.get("time_traceable", True)
 
     os.makedirs(args.outdir, exist_ok=True)
 
     if role == "GM":
         if transport == "MULTICAST":
-            conf = generate_gm_multicast_conf()
+            conf = generate_gm_multicast_conf(time_traceable)
         else:
-            conf = generate_gm_unicast_conf()
+            conf = generate_gm_unicast_conf(time_traceable)
 
         out_path = os.path.join(args.outdir, "ptp4l-switchberry-gm.conf")
         with open(out_path, "w") as f:
