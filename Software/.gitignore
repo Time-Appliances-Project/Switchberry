@@ -1,0 +1,23 @@
+# Build artifacts
+*.o
+*.d
+*.dep
+
+# Compiled binaries (dplltool, spidev_test, etc.)
+clockmatrix/dpll/dplltool
+clockmatrix/dpll/spidev_test
+
+# Temporary / editor files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Log files
+*.log
+
+# Lock files
+/tmp/sb-reinstall.lock
+
+# Generated SSL certs
+status-web.pem

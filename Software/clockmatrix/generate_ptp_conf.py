@@ -18,9 +18,8 @@ DEFAULT_OUTDIR = "/etc/switchberry"
 
 
 def generate_gm_unicast_conf(time_traceable: bool = True) -> str:
-    tt = 1 if time_traceable else 0
     clock_class = 6 if time_traceable else 248
-    time_source = "0x20" if time_traceable else "0xa0"  # GPS : INTERNAL_OSCILLATOR
+    clock_accuracy = "0x21" if time_traceable else "0xFE"  # 100ns (GPS) : unknown
     return f"""\
 [global]
 serverOnly\t\t\t1
@@ -33,18 +32,15 @@ tx_timestamp_timeout\t\t10000
 ptp_minor_version\t\t0
 utc_offset\t\t\t37
 leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
-timeTraceable\t\t\t{tt}
-frequencyTraceable\t\t{tt}
 clockClass\t\t\t{clock_class}
-timeSource\t\t\t{time_source}
+clockAccuracy\t\t\t{clock_accuracy}
 [eth0]
 """
 
 
 def generate_gm_multicast_conf(time_traceable: bool = True) -> str:
-    tt = 1 if time_traceable else 0
     clock_class = 6 if time_traceable else 248
-    time_source = "0x20" if time_traceable else "0xa0"
+    clock_accuracy = "0x21" if time_traceable else "0xFE"
     return f"""\
 [global]
 serverOnly\t\t\t1
@@ -55,10 +51,8 @@ tx_timestamp_timeout\t\t10000
 ptp_minor_version\t\t0
 utc_offset\t\t\t37
 leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
-timeTraceable\t\t\t{tt}
-frequencyTraceable\t\t{tt}
 clockClass\t\t\t{clock_class}
-timeSource\t\t\t{time_source}
+clockAccuracy\t\t\t{clock_accuracy}
 [eth0]
 """
 
