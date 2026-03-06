@@ -196,9 +196,8 @@ def get_ptp_status():
     result = {"role": role}
 
     try:
-        # ptp4l creates its UDS socket at /var/run/ptp4l by default.
-        # Use direct path check instead of find (which can miss it when
-        # /var/run is a symlink to /run on some systems).
+        # ptp4l creates a UDS socket at /var/run/ptp4l.
+        # Check both paths since /var/run may be a symlink to /run.
         sock = None
         for candidate in ["/var/run/ptp4l", "/run/ptp4l"]:
             if os.path.exists(candidate):
@@ -207,14 +206,12 @@ def get_ptp_status():
 
         if not sock:
             if role == "GM":
-                result["status"] = "ptp4l UDS socket not found — ptp4l-gm may not be running yet"
+                result["status"] = "ptp4l not running \u2014 waiting for DPLL + ts2phc convergence"
             elif role == "CLIENT":
-                result["status"] = "ptp4l UDS socket not found — ptp4l-client may not be running yet"
+                result["status"] = "ptp4l not running \u2014 ptp4l-client may not be started yet"
             else:
                 result["status"] = "PTP not configured (role=NONE)"
             return result
-
-        result["socket"] = sock
 
         # Query port state
         port_out = run_cmd(["sudo", "pmc", "-u", "-s", sock, "-b", "0", "GET PORT_DATA_SET"])
