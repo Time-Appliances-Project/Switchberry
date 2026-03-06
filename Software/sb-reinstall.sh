@@ -58,7 +58,7 @@ echo "    $(date)                              "
 echo "========================================"
 
 # 0. Fix script permissions + tell git to ignore permission changes
-echo "[0/6] Fixing script permissions..."
+echo "[0/7] Fixing script permissions..."
 find "$SOFTWARE_DIR" -name '*.sh' -exec chmod +x {} +
 find "$SOFTWARE_DIR" -name '*.py' -exec chmod +x {} +
 git -C "$SOFTWARE_DIR" config core.fileMode false 2>/dev/null || true
@@ -67,24 +67,35 @@ git -C "$SOFTWARE_DIR" config core.fileMode false 2>/dev/null || true
 # 0xc012 = DPLL_MODE register. 0x5a = Trigger EEPROM Reload / Reset
 # WARNING: This disrupts the KSZ9567 clock tree and will break Ethernet.
 if [[ -x "$DPLLTOOL" ]]; then
-    echo "[1/6] Resetting DPLL configuration..."
+    echo "[1/7] Resetting DPLL configuration..."
     "$DPLLTOOL" --write 0xc012 0x5a
     echo "DPLL reset command sent."
     sleep 1
 else
-    echo "[1/6] Warning: dplltool not found at $DPLLTOOL. Skipping DPLL reset."
+    echo "[1/7] Warning: dplltool not found at $DPLLTOOL. Skipping DPLL reset."
 fi
 
 # 2. Stop Services
-echo "[2/6] Stopping services..."
+echo "[2/7] Stopping services..."
 if [[ -d "$SOFTWARE_DIR/daemons" ]]; then
     (cd "$SOFTWARE_DIR/daemons" && sudo make stop) || echo "Warning: 'make stop' returned error (ignoring)."
 else
     echo "Warning: daemons directory not found."
 fi
 
-# 3. Install All
-echo "[3/6] Building and Installing software..."
+# 3. Flush journal logs for Switchberry services
+# Clears old log entries so the web dashboard only shows logs from this install.
+echo "[3/7] Flushing Switchberry service logs..."
+sudo journalctl --rotate
+for svc in switchberry-sanity switchberry-apply-timing switchberry-apply-network \
+           switchberry-full-init switchberry-dpll-monitor switchberry-ptp-role \
+           switchberry-status-web switchberry-cm4-pps-monitor \
+           ts2phc-switchberry ptp4l-switchberry-gm ptp4l-switchberry-client; do
+    sudo journalctl --vacuum-time=1s -u "${svc}.service" 2>/dev/null || true
+done
+
+# 4. Install All
+echo "[4/7] Building and Installing software..."
 if [[ -f "$SOFTWARE_DIR/install_all.sh" ]]; then
     bash "$SOFTWARE_DIR/install_all.sh" -y
 else
@@ -92,8 +103,8 @@ else
     exit 1
 fi
 
-# 4. Generate PTP config files
-echo "[4/6] Generating PTP config files..."
+# 5. Generate PTP config files
+echo "[5/7] Generating PTP config files..."
 CONF_JSON="/etc/startup-dpll.json"
 if [[ -f "$SOFTWARE_DIR/clockmatrix/generate_ptp_conf.py" ]] && [[ -f "$CONF_JSON" ]]; then
     sudo python3 "$SOFTWARE_DIR/clockmatrix/generate_ptp_conf.py" -c "$CONF_JSON"
@@ -101,16 +112,16 @@ else
     echo "Warning: generate_ptp_conf.py or config not found, skipping."
 fi
 
-# 5. Apply network (eth0) configuration
-echo "[5/6] Applying network configuration..."
+# 6. Apply network (eth0) configuration
+echo "[6/7] Applying network configuration..."
 if [[ -f "$SOFTWARE_DIR/clockmatrix/apply_network.py" ]] && [[ -f "$CONF_JSON" ]]; then
     sudo python3 "$SOFTWARE_DIR/clockmatrix/apply_network.py" -c "$CONF_JSON"
 else
     echo "Warning: apply_network.py or config not found, skipping."
 fi
 
-# 6. Restart Services
-echo "[6/6] Restarting services..."
+# 7. Restart Services
+echo "[7/7] Restarting services..."
 if [[ -d "$SOFTWARE_DIR/daemons" ]]; then
     (cd "$SOFTWARE_DIR/daemons" && sudo make restart && sudo make enable)
 else

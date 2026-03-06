@@ -42,7 +42,8 @@ SERVICES = [
     "switchberry-status-web.service",
 ]
 
-LOG_LINES = 3  # Number of journal lines per service
+LOG_LINES = 5  # Number of journal lines per service
+COMBINED_LOG_LINES = 30  # Number of lines in the combined log view
 
 
 def run_cmd(cmd, timeout=5):
@@ -242,6 +243,16 @@ def get_ptp_status():
         return result
 
 
+def get_combined_logs():
+    """Get combined recent logs from all active Switchberry services."""
+    # Build a journalctl command that queries all services at once
+    cmd = ["journalctl", "--no-pager", "--output=short",
+           "-n", str(COMBINED_LOG_LINES), "--reverse"]
+    for svc in SERVICES:
+        cmd.extend(["-u", svc])
+    return run_cmd(cmd, timeout=5)
+
+
 def build_html():
     """Build the complete status HTML page."""
     hostname = esc(get_hostname())
@@ -251,6 +262,7 @@ def build_html():
     dpll = get_dpll_status()
     ptp = get_ptp_status()
     smas = get_sma_config()
+    combined_logs = get_combined_logs()
 
     # Active service rows with log tails
     active_svc_rows = ""
@@ -334,7 +346,7 @@ def build_html():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="10">
+    <meta http-equiv="refresh" content="1">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Switchberry Status — {hostname}</title>
     <style>
@@ -366,6 +378,13 @@ def build_html():
             background: #0d1b2a; color: #8892b0; padding: 8px; margin: 4px 0;
             border-radius: 4px; font-size: 0.75em; line-height: 1.4;
             overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+            border: 1px solid #1e3a5f;
+        }}
+        pre.combined-logs {{
+            background: #0d1b2a; color: #8892b0; padding: 10px; margin: 4px 0;
+            border-radius: 4px; font-size: 0.75em; line-height: 1.5;
+            max-height: 400px; overflow-y: scroll; overflow-x: auto;
+            white-space: pre-wrap; word-break: break-all;
             border: 1px solid #1e3a5f;
         }}
     </style>
@@ -413,7 +432,12 @@ def build_html():
         {ptp_block}
     </div>
 
-    <p class="refresh">Auto-refreshes every 10 seconds</p>
+    <div class="card">
+        <h2>Combined Service Log</h2>
+        <pre class="combined-logs">{esc(combined_logs)}</pre>
+    </div>
+
+    <p class="refresh">Auto-refreshes every 1 second</p>
 </body>
 </html>"""
     return page
