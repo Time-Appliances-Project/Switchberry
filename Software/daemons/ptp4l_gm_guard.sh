@@ -202,12 +202,18 @@ main() {
     # MASTER after ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES — applying settings before
     # this transition can be silently ignored.
     log "Waiting for ptp4l to reach MASTER state..."
+    local wait_start; wait_start="$(date +%s)"
+    local max_wait=15
     while true; do
-      local port_state
-      port_state="$("${PMC_BASE[@]}" "GET PORT_DATA_SET" 2>/dev/null \
-        | awk '/portState/ {print $2}' || echo "")"
-      if [[ "$port_state" == "MASTER" ]]; then
+      local pmc_out
+      pmc_out="$("${PMC_BASE[@]}" "GET PORT_DATA_SET" 2>&1 || echo "")"
+      if echo "$pmc_out" | grep -q "MASTER"; then
         log "ptp4l reached MASTER state"
+        break
+      fi
+      local now; now="$(date +%s)"
+      if (( now - wait_start >= max_wait )); then
+        log "Timed out waiting for MASTER state (${max_wait}s), applying GM settings anyway"
         break
       fi
       sleep 0.5
