@@ -197,9 +197,21 @@ main() {
     # take full effect for all GRANDMASTER_SETTINGS_NP fields).
     log "Waiting for pmc socket..."
     wait_for_pmc_ready
-    # Give ptp4l a moment to fully initialize its management interface.
-    # Without this delay, SET GRANDMASTER_SETTINGS_NP can be silently ignored.
-    sleep 2
+    # Wait for ptp4l to actually assume the grand master role (portState=MASTER)
+    # before applying GM settings. ptp4l starts in LISTENING and transitions to
+    # MASTER after ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES — applying settings before
+    # this transition can be silently ignored.
+    log "Waiting for ptp4l to reach MASTER state..."
+    while true; do
+      local port_state
+      port_state="$("${PMC_BASE[@]}" "GET PORT_DATA_SET" 2>/dev/null \
+        | awk '/portState/ {print $2}' || echo "")"
+      if [[ "$port_state" == "MASTER" ]]; then
+        log "ptp4l reached MASTER state"
+        break
+      fi
+      sleep 0.5
+    done
     apply_quality "GOOD"
 
     # If degrade mode, track quality transitions
