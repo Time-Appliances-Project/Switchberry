@@ -383,7 +383,7 @@ def build_html():
         pre.combined-logs {{
             background: #0d1b2a; color: #8892b0; padding: 10px; margin: 4px 0;
             border-radius: 4px; font-size: 0.75em; line-height: 1.5;
-            max-height: 400px; overflow-y: scroll; overflow-x: auto;
+            overflow-x: auto;
             white-space: pre-wrap; word-break: break-all;
             border: 1px solid #1e3a5f;
         }}
