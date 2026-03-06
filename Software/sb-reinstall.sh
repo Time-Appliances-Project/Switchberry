@@ -12,10 +12,21 @@ set -euo pipefail
 
 SOFTWARE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="/tmp/sb-reinstall.log"
+LOCK_FILE="/tmp/sb-reinstall.lock"
 
 # ── If we are the foreground invocation, re-exec ourselves in the background ──
 if [[ "${_SB_REINSTALL_BG:-}" != "1" ]]; then
-    export _SB_REINSTALL_BG=1
+    # Clean up stale log file (may be owned by root from a previous run)
+    sudo rm -f "$LOG_FILE"
+    touch "$LOG_FILE"
+
+    # Prevent double-spawn: check for an existing background run
+    if [[ -f "$LOCK_FILE" ]] && kill -0 "$(cat "$LOCK_FILE" 2>/dev/null)" 2>/dev/null; then
+        echo "Error: A reinstall is already running (PID $(cat "$LOCK_FILE"))."
+        echo "  Monitor: tail -f $LOG_FILE"
+        exit 1
+    fi
+
     echo "========================================"
     echo "    Switchberry Reinstall Automation    "
     echo "========================================"
@@ -28,7 +39,11 @@ if [[ "${_SB_REINSTALL_BG:-}" != "1" ]]; then
     echo "      will drop when the DPLL resets. This is normal — the reinstall"
     echo "      will continue in the background. Reconnect after ~30 seconds."
     echo ""
-    nohup sudo bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
+    # Use --preserve-env so _SB_REINSTALL_BG survives the sudo boundary
+    export _SB_REINSTALL_BG=1
+    nohup sudo --preserve-env=_SB_REINSTALL_BG bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
+    BG_PID=$!
+    echo "$BG_PID" > "$LOCK_FILE"
     disown
     exit 0
 fi
@@ -98,4 +113,7 @@ fi
 echo "========================================"
 echo "    Reinstall Complete — $(date)        "
 echo "========================================"
+
+# Clean up lock file
+rm -f "$LOCK_FILE"
 
