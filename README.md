@@ -77,7 +77,16 @@ The CM4 is available through three interfaces:
 
 ### Customize & Monitor
 
-Once logged in, the software lives in `~/Switchberry/Software/`:
+Clone the repo and make scripts executable:
+
+```bash
+cd ~/
+git clone https://github.com/Time-Appliances-Project/Switchberry
+cd Switchberry/Software
+chmod +x sb-*.sh install_all.sh
+```
+
+Then configure and apply:
 
 ```bash
 ./sb-config.sh          # Interactive wizard — configure PTP role, timing sources, SMA routing
