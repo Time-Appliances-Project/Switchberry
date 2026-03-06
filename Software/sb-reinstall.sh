@@ -14,8 +14,11 @@ SOFTWARE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="/tmp/sb-reinstall.log"
 LOCK_FILE="/tmp/sb-reinstall.lock"
 
-# ── If we are the foreground invocation, re-exec ourselves in the background ──
-if [[ "${_SB_REINSTALL_BG:-}" != "1" ]]; then
+# ── Optional: run in background to survive SSH disconnects ──
+# Use --background flag if SSH'd through the Ethernet switch (DPLL reset drops link).
+# Default: run directly in the foreground.
+if [[ "${1:-}" == "--background" ]]; then
+    shift
     # Clean up stale log file (may be owned by root from a previous run)
     sudo rm -f "$LOG_FILE"
     touch "$LOG_FILE"
@@ -39,9 +42,7 @@ if [[ "${_SB_REINSTALL_BG:-}" != "1" ]]; then
     echo "      will drop when the DPLL resets. This is normal — the reinstall"
     echo "      will continue in the background. Reconnect after ~30 seconds."
     echo ""
-    # Use --preserve-env so _SB_REINSTALL_BG survives the sudo boundary
-    export _SB_REINSTALL_BG=1
-    nohup sudo --preserve-env=_SB_REINSTALL_BG bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
+    nohup sudo bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
     BG_PID=$!
     echo "$BG_PID" > "$LOCK_FILE"
     disown
