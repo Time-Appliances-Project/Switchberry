@@ -526,8 +526,8 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
         has_ptp_source = any("CM4" in s.name for s in plan.channel6_inputs)
         
         if has_gps_source:
-            psl_limit = 10
-            reason = "GPS detected (Tight)"
+            psl_limit = 100
+            reason = "GPS detected"
         elif has_ptp_source:
             # Tuned for PTP Client (CM4 tracking):
             # - PSL: 300 ns/s (Track servo transients)
