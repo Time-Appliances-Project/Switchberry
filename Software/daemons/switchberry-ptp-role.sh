@@ -23,7 +23,8 @@ case "${ROLE}" in
     GM)
         echo "[switchberry-ptp-role] Configuring as GRANDMASTER"
 
-        # Start GM stack
+        # Start GM stack (gpspipe-socat creates /dev/gps-ts2phc for ts2phc)
+        systemctl start gpspipe-socat.service || true
         systemctl start ts2phc-switchberry.service || true
         systemctl start ptp4l-switchberry-gm.service || true
 

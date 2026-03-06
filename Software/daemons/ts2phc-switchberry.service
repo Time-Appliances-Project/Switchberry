@@ -1,8 +1,8 @@
 # /lib/systemd/system/ts2phc-switchberry.service
 [Unit]
 Description=TS2PHC PHC disciplining for Switchberry (GM)
-After=switchberry-dpll-monitor.service
-Wants=switchberry-dpll-monitor.service
+After=switchberry-dpll-monitor.service gpspipe-socat.service
+Wants=switchberry-dpll-monitor.service gpspipe-socat.service
 
 [Service]
 Type=simple
