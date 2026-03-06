@@ -105,6 +105,7 @@ pmc_set_gm_np() {
   done
 
   # shellcheck disable=SC2086
+  log "pmc command: SET GRANDMASTER_SETTINGS_NP${kv}"
   "${PMC_BASE[@]}" "SET GRANDMASTER_SETTINGS_NP${kv}" >/dev/null
 }
 
