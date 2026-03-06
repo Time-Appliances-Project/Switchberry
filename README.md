@@ -83,6 +83,7 @@ Clone the repo and make scripts executable:
 cd ~/
 git clone https://github.com/Time-Appliances-Project/Switchberry
 cd Switchberry/Software
+git config core.fileMode false
 chmod +x sb-*.sh install_all.sh
 ```
 
