@@ -21,3 +21,6 @@ clockmatrix/dpll/spidev_test
 
 # Generated SSL certs
 status-web.pem
+
+# User-generated config (created by sb-config.sh wizard)
+clockmatrix/dpll-config.json
