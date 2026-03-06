@@ -93,7 +93,8 @@ For users debugging schematics or low-level GPIO code, here is the mapping betwe
 cd ~/
 git clone https://github.com/Time-Appliances-Project/Switchberry
 cd Switchberry/Software 
-chmod +x sb-*.sh
+git config core.fileMode false
+chmod +x sb-*.sh install_all.sh
 ```
 
 ### 2) Run the config wizard

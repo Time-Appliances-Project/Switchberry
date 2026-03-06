@@ -57,6 +57,12 @@ echo "    Switchberry Reinstall (background)  "
 echo "    $(date)                              "
 echo "========================================"
 
+# 0. Fix script permissions + tell git to ignore permission changes
+echo "[0/6] Fixing script permissions..."
+find "$SOFTWARE_DIR" -name '*.sh' -exec chmod +x {} +
+find "$SOFTWARE_DIR" -name '*.py' -exec chmod +x {} +
+git -C "$SOFTWARE_DIR" config core.fileMode false 2>/dev/null || true
+
 # 1. Reset DPLL
 # 0xc012 = DPLL_MODE register. 0x5a = Trigger EEPROM Reload / Reset
 # WARNING: This disrupts the KSZ9567 clock tree and will break Ethernet.
