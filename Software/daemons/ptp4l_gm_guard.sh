@@ -20,9 +20,8 @@ PTP4L_ALLOW_HOLDOVER="${PTP4L_ALLOW_HOLDOVER:-0}"
 
 PTP4L_CMD=(/usr/sbin/ptp4l -f /etc/switchberry/ptp4l-switchberry-gm.conf -m)
 
-# pmc settings (only used if PTP4L_NOT_OK_ACTION=degrade)
-PMC_SOCK="${PMC_SOCK:-/var/run/ptp4l}"
-PMC_BASE=(pmc -u -b 0 -t 1 -s "$PMC_SOCK")
+# pmc settings
+PMC_BASE=(pmc -u -b 0)
 
 GOOD_CLOCKCLASS="${GOOD_CLOCKCLASS:-6}"
 GOOD_CLOCKACCURACY="${GOOD_CLOCKACCURACY:-0x22}"
