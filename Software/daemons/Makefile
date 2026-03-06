@@ -27,6 +27,7 @@ INSTALL ?= install
 SERVICE_FILES := \
     switchberry-sanity.service \
     switchberry-apply-timing.service \
+    switchberry-apply-network.service \
     switchberry-full-init.service \
     switchberry-dpll-monitor.service \
     switchberry-ptp-role.service \
@@ -71,6 +72,7 @@ CONF_FILES_MISSING    := $(filter-out $(CONF_FILES_EXISTING),$(CONF_FILES))
 # Core boot chain (required)
 SERVICES_CORE := \
     switchberry-sanity.service \
+    switchberry-apply-network.service \
     switchberry-apply-timing.service \
     switchberry-full-init.service \
     switchberry-dpll-monitor.service \
