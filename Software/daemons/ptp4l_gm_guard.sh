@@ -106,7 +106,7 @@ pmc_set_gm_np() {
 
   # shellcheck disable=SC2086
   log "pmc command: SET GRANDMASTER_SETTINGS_NP${kv}"
-  "${PMC_BASE[@]}" "SET GRANDMASTER_SETTINGS_NP${kv}" >/dev/null
+  "${PMC_BASE[@]}" "SET GRANDMASTER_SETTINGS_NP${kv}"
 }
 
 apply_quality() {
@@ -197,6 +197,9 @@ main() {
     # take full effect for all GRANDMASTER_SETTINGS_NP fields).
     log "Waiting for pmc socket..."
     wait_for_pmc_ready
+    # Give ptp4l a moment to fully initialize its management interface.
+    # Without this delay, SET GRANDMASTER_SETTINGS_NP can be silently ignored.
+    sleep 2
     apply_quality "GOOD"
 
     # If degrade mode, track quality transitions
