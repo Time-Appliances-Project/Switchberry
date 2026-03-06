@@ -31,6 +31,7 @@ CERT_DIR = "/etc/switchberry"
 CERT_FILE = os.path.join(CERT_DIR, "status-web.pem")
 
 SERVICES = [
+    "switchberry-sanity.service",
     "ptp4l-switchberry-client.service",
     "ptp4l-switchberry-gm.service",
     "switchberry-cm4-pps-monitor.service",

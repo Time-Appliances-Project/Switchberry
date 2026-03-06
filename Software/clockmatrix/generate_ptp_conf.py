@@ -28,6 +28,8 @@ unicast_req_duration\t\t60
 announceReceiptTimeout\t\t2
 tx_timestamp_timeout\t\t10000
 ptp_minor_version\t\t0
+utc_offset\t\t\t37
+leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
 [eth0]
 """
 
@@ -41,6 +43,8 @@ inhibit_multicast_service\t0
 announceReceiptTimeout\t\t3
 tx_timestamp_timeout\t\t10000
 ptp_minor_version\t\t0
+utc_offset\t\t\t37
+leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
 [eth0]
 """
 
@@ -63,6 +67,8 @@ free_running\t\t\t0
 first_step_threshold\t\t1
 logSyncInterval\t\t\t0
 ptp_minor_version\t\t0
+utc_offset\t\t\t37
+leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
 #
 [unicast_master_table]
 table_id\t\t\t1
@@ -90,6 +96,8 @@ free_running\t\t\t0
 first_step_threshold\t\t1
 logSyncInterval\t\t\t0
 ptp_minor_version\t\t0
+utc_offset\t\t\t37
+leapfile\t\t\t/usr/share/zoneinfo/leap-seconds.list
 [eth0]
 """
 

@@ -34,6 +34,7 @@ echo
 # 2. Services
 echo "[Services]"
 SERVICES=(
+    "switchberry-sanity.service"
     "ptp4l-switchberry-client.service"
     "ptp4l-switchberry-gm.service"
     "switchberry-cm4-pps-monitor.service"

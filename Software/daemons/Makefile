@@ -25,6 +25,7 @@ INSTALL ?= install
 
 # Systemd service units expected to live alongside this Makefile
 SERVICE_FILES := \
+    switchberry-sanity.service \
     switchberry-apply-timing.service \
     switchberry-full-init.service \
     switchberry-dpll-monitor.service \
@@ -38,6 +39,7 @@ SERVICE_FILES := \
 
 # Helper scripts in this directory that should go into /usr/local/sbin
 SCRIPT_FILES := \
+    switchberry_sanity_check.sh \
     ptp4l_dpll_quality_guard.sh \
     ts2phc_dpll_guard.sh \
     ptp4l_gm_guard.sh \
@@ -68,6 +70,7 @@ CONF_FILES_MISSING    := $(filter-out $(CONF_FILES_EXISTING),$(CONF_FILES))
 
 # Core boot chain (required)
 SERVICES_CORE := \
+    switchberry-sanity.service \
     switchberry-apply-timing.service \
     switchberry-full-init.service \
     switchberry-dpll-monitor.service \

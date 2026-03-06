@@ -1,0 +1,17 @@
+# /lib/systemd/system/switchberry-sanity.service
+[Unit]
+Description=Switchberry hardware sanity check (kernel config validation)
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/switchberry_sanity_check.sh
+RemainAfterExit=yes
+
+# Give clear status on failure
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

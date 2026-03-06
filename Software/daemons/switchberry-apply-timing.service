@@ -1,7 +1,8 @@
 # /etc/systemd/system/switchberry-apply-timing.service
 [Unit]
 Description=Switchberry apply ClockMatrix timing configuration at boot
-After=network.target
+Requires=switchberry-sanity.service
+After=network.target switchberry-sanity.service
 Wants=network.target
 
 [Service]
