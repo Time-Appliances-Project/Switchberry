@@ -183,10 +183,6 @@ stop_ptp4l() {
 main() {
   log "Starting. action=$PTP4L_NOT_OK_ACTION hold_ts2phc=${TS2PHC_OK_HOLD_SEC}s allow_holdover=$PTP4L_ALLOW_HOLDOVER"
 
-  if [[ "$PTP4L_NOT_OK_ACTION" == "degrade" ]]; then
-    wait_for_pmc_ready
-  fi
-
   while true; do
     wait_for_ready_window
 
@@ -194,10 +190,18 @@ main() {
 
     start_ptp4l
 
-    # If degrade mode, set initial quality
+    # Wait for ptp4l's UDS socket to be ready, then apply GM quality settings
+    # via pmc. This ensures clockClass/clockAccuracy/timeTraceable/timeSource
+    # are fully applied regardless of mode (ptp4l.conf alone doesn't always
+    # take full effect for all GRANDMASTER_SETTINGS_NP fields).
+    log "Waiting for pmc socket..."
+    wait_for_pmc_ready
+    apply_quality "GOOD"
+
+    # If degrade mode, track quality transitions
     local last_quality=""
     if [[ "$PTP4L_NOT_OK_ACTION" == "degrade" ]]; then
-      last_quality="INIT"
+      last_quality="GOOD"
     fi
 
     while (( ptp4l_pgid != 0 )) && kill -0 "$ptp4l_pgid" 2>/dev/null; do

@@ -149,16 +149,20 @@ def get_sma_config():
 
 
 def get_service_status():
-    """Get status and recent log lines of all monitored services."""
-    results = []
+    """Get status and recent log lines of all monitored services.
+       Returns (active_list, inactive_list) where each item is (svc, status, logs)."""
+    active = []
+    inactive = []
     for svc in SERVICES:
         status = run_cmd(["systemctl", "is-active", svc])
         logs = ""
         if status == "active":
             logs = run_cmd(["journalctl", "-u", svc, "-n", str(LOG_LINES),
                             "--no-pager", "--output=short"])
-        results.append((svc, status, logs))
-    return results
+            active.append((svc, status, logs))
+        else:
+            inactive.append((svc, status, logs))
+    return active, inactive
 
 
 def get_dpll_status():
@@ -174,19 +178,48 @@ def get_dpll_status():
     return results
 
 
+def get_ptp_role():
+    """Read configured PTP role from config JSON."""
+    try:
+        if os.path.isfile(CONFIG_PATH):
+            with open(CONFIG_PATH) as f:
+                d = json.load(f)
+            return d.get("ptp_role", "NONE").upper()
+    except Exception:
+        pass
+    return "NONE"
+
+
 def get_ptp_status():
-    """Query PTP status via pmc."""
+    """Query PTP status via pmc. Returns a dict with role and parsed fields."""
+    role = get_ptp_role()
+    result = {"role": role}
+
     try:
         sockets = run_cmd(["sudo", "find", "/var/run", "-name", "ptp4l*"])
         if not sockets:
-            return {"status": "No PTP sockets found"}
+            if role == "GM":
+                result["status"] = "No PTP sockets found — ptp4l-gm may not be running yet"
+            elif role == "CLIENT":
+                result["status"] = "No PTP sockets found — ptp4l-client may not be running yet"
+            else:
+                result["status"] = "PTP not configured (role=NONE)"
+            return result
 
         sock = sockets.split("\n")[0].strip()
-        out = run_cmd(["sudo", "pmc", "-u", "-s", sock, "-b", "0", "GET TIME_STATUS_NP"])
-        if not out:
-            return {"status": f"pmc query failed (socket: {sock})"}
+        result["socket"] = sock
 
-        result = {"socket": sock}
+        # Query port state
+        port_out = run_cmd(["sudo", "pmc", "-u", "-s", sock, "-b", "0", "GET PORT_DATA_SET"])
+        for line in port_out.split("\n"):
+            line = line.strip()
+            if "portState" in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    result["port_state"] = parts[1]
+
+        # Query time status
+        out = run_cmd(["sudo", "pmc", "-u", "-s", sock, "-b", "0", "GET TIME_STATUS_NP"])
         for line in out.split("\n"):
             line = line.strip()
             if "master_offset" in line:
@@ -198,17 +231,10 @@ def get_ptp_status():
                 if len(parts) >= 2:
                     result["gm_identity"] = parts[1]
 
-        port_out = run_cmd(["sudo", "pmc", "-u", "-s", sock, "-b", "0", "GET PORT_DATA_SET"])
-        for line in port_out.split("\n"):
-            line = line.strip()
-            if "portState" in line:
-                parts = line.split()
-                if len(parts) >= 2:
-                    result["port_state"] = parts[1]
-
         return result
     except Exception as e:
-        return {"status": f"Error: {e}"}
+        result["status"] = f"Error: {e}"
+        return result
 
 
 def build_html():
@@ -216,42 +242,58 @@ def build_html():
     hostname = esc(get_hostname())
     mac, ip = get_eth0_info()
     config = get_config_summary()
-    services = get_service_status()
+    active_svcs, inactive_svcs = get_service_status()
     dpll = get_dpll_status()
     ptp = get_ptp_status()
     smas = get_sma_config()
 
-    # Service rows with log tails
-    svc_rows = ""
-    for svc, status, logs in services:
-        color = "#4caf50" if status == "active" else "#f44336"
-        dot = "🟢" if status == "active" else "🔴"
+    # Active service rows with log tails
+    active_svc_rows = ""
+    for svc, status, logs in active_svcs:
         log_block = ""
         if logs:
             log_block = f'<pre class="logs">{esc(logs)}</pre>'
-        svc_rows += f'''<tr>
-            <td>{dot} {esc(svc)}</td>
-            <td style="color:{color};font-weight:bold">{esc(status)}</td>
+        active_svc_rows += f'''<tr>
+            <td>🟢 {esc(svc)}</td>
+            <td style="color:#4caf50;font-weight:bold">{esc(status)}</td>
         </tr>\n'''
         if log_block:
-            svc_rows += f'<tr><td colspan="2">{log_block}</td></tr>\n'
+            active_svc_rows += f'<tr><td colspan="2">{log_block}</td></tr>\n'
+
+    # Inactive service rows (no logs)
+    inactive_svc_rows = ""
+    for svc, status, logs in inactive_svcs:
+        inactive_svc_rows += f'''<tr>
+            <td style="color:#666">⚫ {esc(svc)}</td>
+            <td style="color:#666">{esc(status)}</td>
+        </tr>\n'''
 
     # DPLL rows
     dpll_rows = ""
     for label, state, combo in dpll:
         dpll_rows += f'<tr><td>{esc(label)}</td><td>{esc(state)}</td><td>{esc(combo)}</td></tr>\n'
 
-    # PTP info
-    if "error" in ptp or "status" in ptp:
-        ptp_block = f'<p>{esc(ptp.get("status", ptp.get("error", "Unknown")))}</p>'
-    else:
+    # PTP info — role-aware display
+    ptp_role = ptp.get("role", "NONE")
+    if "status" in ptp:
+        ptp_block = f'<p>{esc(ptp.get("status"))}</p>'
+    elif ptp_role == "GM":
         ptp_block = f"""
         <table>
-            <tr><td>Socket</td><td>{esc(ptp.get("socket"))}</td></tr>
+            <tr><td>Role</td><td><strong>Grandmaster</strong></td></tr>
+            <tr><td>Port State</td><td>{esc(ptp.get("port_state"))}</td></tr>
+            <tr><td>GM Identity</td><td>{esc(ptp.get("gm_identity"))}</td></tr>
+        </table>"""
+    elif ptp_role == "CLIENT":
+        ptp_block = f"""
+        <table>
+            <tr><td>Role</td><td><strong>Client</strong></td></tr>
+            <tr><td>Port State</td><td>{esc(ptp.get("port_state"))}</td></tr>
             <tr><td>Master Offset</td><td>{esc(ptp.get("master_offset"))} ns</td></tr>
             <tr><td>GM Identity</td><td>{esc(ptp.get("gm_identity"))}</td></tr>
-            <tr><td>Port State</td><td>{esc(ptp.get("port_state"))}</td></tr>
         </table>"""
+    else:
+        ptp_block = '<p>PTP not configured (role=NONE)</p>'
 
     # Config info
     if "error" in config:
@@ -344,8 +386,13 @@ def build_html():
     {sma_block}
 
     <div class="card">
-        <h2>Services</h2>
-        <table>{svc_rows}</table>
+        <h2>Active Services</h2>
+        <table>{active_svc_rows}</table>
+    </div>
+
+    <div class="card">
+        <h2>Inactive Services</h2>
+        <table>{inactive_svc_rows}</table>
     </div>
 
     <div class="card">
