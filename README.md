@@ -16,6 +16,7 @@ Switchberry is a Raspberry Pi CM4–controlled Ethernet switching + timing platf
 **Switchberry is available for purchase on Tindie:**
 
 👉 **[Buy Switchberry on Shopify](https://pmqipr-s3.myshopify.com/collections/switchberry-bundles)**
+
 👉 **[Buy Switchberry on Tindie](https://www.tindie.com/products/timeappliances/switchberry/)**
 
 ---
