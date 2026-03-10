@@ -528,6 +528,9 @@ def configure_dpll_inputs(cfg: TimingConfig, dry_run: bool = False):
         if has_gps_source:
             psl_limit = 100
             reason = "GPS detected"
+            
+            print("Setting Ch6 Loop Bandwidth to 100 mHz (GPS/GM).")
+            run(["dplltool", "set-loop-bw", "6", "100", "mHz"], dry_run=dry_run)
         elif has_ptp_source:
             # Tuned for PTP Client (CM4 tracking):
             # - PSL: 300 ns/s (Track servo transients)

@@ -131,7 +131,12 @@ def get_config_summary():
 
 
 def get_sma_config():
-    """Parse SMA configuration from JSON config."""
+    """Parse SMA configuration from JSON config.
+
+    The JSON stores SMAs by hardware name (SMA1..SMA4), but the user sees
+    rear-panel labels which are reversed: User SMA# = 5 - HW SMA#.
+    This function maps to User names and sorts accordingly.
+    """
     if not os.path.isfile(CONFIG_PATH):
         return []
     try:
@@ -140,12 +145,20 @@ def get_sma_config():
         smas = d.get("smas", [])
         results = []
         for i, sma in enumerate(smas):
-            label = f"SMA{i + 1}"
+            hw_name = sma.get("name", f"SMA{i + 1}")
+            try:
+                hw_num = int(hw_name.replace("SMA", ""))
+                user_num = 5 - hw_num
+            except ValueError:
+                user_num = i + 1
+            label = f"SMA{user_num}"
             direction = sma.get("direction", "N/A")
             freq = sma.get("frequency_hz")
             freq_str = f"{freq} Hz" if freq else "N/A"
-            results.append((label, direction, freq_str))
-        return results
+            results.append((user_num, label, direction, freq_str))
+        # Sort by user SMA number for intuitive display
+        results.sort(key=lambda x: x[0])
+        return [(label, direction, freq_str) for _, label, direction, freq_str in results]
     except Exception:
         return []
 

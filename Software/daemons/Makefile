@@ -36,7 +36,8 @@ SERVICE_FILES := \
     ptp4l-switchberry-client.service \
     switchberry-cm4-pps-monitor.service \
     gpspipe-socat.service \
-    switchberry-status-web.service
+    switchberry-status-web.service \
+    switchberry-dhcp-watchdog.service
 
 # Helper scripts in this directory that should go into /usr/local/sbin
 SCRIPT_FILES := \
@@ -45,7 +46,8 @@ SCRIPT_FILES := \
     ts2phc_dpll_guard.sh \
     ptp4l_gm_guard.sh \
     switchberry_cm4_pps_monitor.sh \
-    switchberry-ptp-role.sh
+    switchberry-ptp-role.sh \
+    switchberry-dhcp-watchdog.sh
 
 # Timing/PTP config files that should go into /etc/switchberry
 CONF_FILES := \
@@ -76,7 +78,8 @@ SERVICES_CORE := \
     switchberry-apply-timing.service \
     switchberry-full-init.service \
     switchberry-dpll-monitor.service \
-    switchberry-status-web.service
+    switchberry-status-web.service \
+    switchberry-dhcp-watchdog.service
 
 # GNSS plumbing (optional; gpsd.service is usually provided by the OS image)
 SERVICES_GNSS := \
