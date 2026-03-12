@@ -7,7 +7,7 @@ DPLL_STATUS_FILE="${DPLL_STATUS_FILE:-/tmp/switchberry-clockmatrix.status}"
 # Output for other services to gate on
 TS2PHC_STATUS_FILE="${TS2PHC_STATUS_FILE:-/tmp/switchberry-ts2phc.status}"
 
-POLL_SEC="${POLL_SEC:-0.2}"
+POLL_SEC="${POLL_SEC:-1}"
 RESTART_BACKOFF_SEC="${RESTART_BACKOFF_SEC:-1}"
 
 # Convergence criteria:
@@ -125,8 +125,8 @@ start_ts2phc() {
 
   (
     while IFS= read -r line; do
-      # Echo filtered logs
-      if ! echo "$line" | grep -Eq "$FILTER_RE"; then
+      # Echo filtered logs (use bash builtin to avoid spawning grep per line)
+      if ! [[ "$line" =~ $FILTER_RE ]]; then
         echo "$line"
       fi
 

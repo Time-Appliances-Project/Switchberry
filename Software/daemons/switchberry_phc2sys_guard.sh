@@ -36,10 +36,11 @@ OFFSET_ABS_MAX_NS="${OFFSET_ABS_MAX_NS:-1000}"
 # -s eth0: source is eth0 PHC
 # -c CLOCK_REALTIME: destination is system clock
 # -O 0: zero offset (ts2phc/ptp4l already handles TAI/UTC)
+# -R 1: poll PHC once per second (reduce contention with ts2phc on genet driver)
 # -m: log to stdout
 # -q: no syslog
 # -l 6: info level
-PHC2SYS_CMD=(/usr/sbin/phc2sys -s eth0 -c CLOCK_REALTIME -O 0 -m -q -l 6)
+PHC2SYS_CMD=(/usr/sbin/phc2sys -s eth0 -c CLOCK_REALTIME -O 0 -R 1 -m -q -l 6)
 
 # Convergence criteria for phc2sys output
 CONVERGE_S2_COUNT="${CONVERGE_S2_COUNT:-3}"
