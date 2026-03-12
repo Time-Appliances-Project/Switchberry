@@ -66,18 +66,21 @@ if [[ "$BACKGROUND" -eq 1 ]]; then
     echo "      will drop when the DPLL resets. This is normal — the reinstall"
     echo "      will continue in the background. Reconnect after ~30 seconds."
     echo ""
-    nohup sudo bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
+    NOHUP_LAUNCHED=1 nohup sudo -E bash "${BASH_SOURCE[0]}" "$@" > "$LOG_FILE" 2>&1 &
     BG_PID=$!
     echo "$BG_PID" > "$LOCK_FILE"
     disown
     exit 0
 fi
 
-# ── Background worker (runs detached) ──
+# ── Worker (runs either in foreground or detached via nohup) ──
 DPLLTOOL="$SOFTWARE_DIR/clockmatrix/dpll/dplltool"
 
+RUN_MODE="foreground"
+if [[ -n "${NOHUP_LAUNCHED:-}" ]]; then RUN_MODE="background"; fi
+
 echo "========================================"
-echo "    Switchberry Reinstall (background)  "
+echo "    Switchberry Reinstall ($RUN_MODE)   "
 echo "    $(date)                              "
 echo "========================================"
 
