@@ -35,12 +35,12 @@ OFFSET_ABS_MAX_NS="${OFFSET_ABS_MAX_NS:-1000}"
 # phc2sys command: sync PHC -> system clock
 # -s eth0: source is eth0 PHC
 # -c CLOCK_REALTIME: destination is system clock
-# -O 37: TAI-UTC offset (PHC runs in TAI, system clock needs UTC; 37 leap seconds as of 2017)
+# -O -37: TAI-UTC offset (PHC runs in TAI, subtract 37 leap seconds to get UTC)
 # -R 1: poll PHC once per second (reduce contention with ts2phc on genet driver)
 # -m: log to stdout
 # -q: no syslog
 # -l 6: info level
-PHC2SYS_CMD=(/usr/sbin/phc2sys -s eth0 -c CLOCK_REALTIME -O 37 -R 1 -m -q -l 6)
+PHC2SYS_CMD=(/usr/sbin/phc2sys -s eth0 -c CLOCK_REALTIME -O -37 -R 1 -m -q -l 6)
 
 # Convergence criteria for phc2sys output
 CONVERGE_S2_COUNT="${CONVERGE_S2_COUNT:-3}"
