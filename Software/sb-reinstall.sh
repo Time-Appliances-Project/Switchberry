@@ -18,12 +18,15 @@ LOCK_FILE="/tmp/sb-reinstall.lock"
 # If the user is SSH'd through the Ethernet switch, the DPLL reset will break
 # the link and kill the SSH session. Detect this and auto-switch to background.
 ssh_over_eth0() {
-    # Check if we're in an SSH session with a connection routed through eth0
+    # Check if we're in an SSH session that came in through eth0.
+    # SSH_CONNECTION = "client_ip client_port server_ip server_port"
+    # Field 3 (server_ip) is the local IP that accepted the connection.
+    # We check which interface owns that IP.
     if [[ -n "${SSH_CONNECTION:-}" ]]; then
-        local ssh_client_ip
-        ssh_client_ip="$(echo "$SSH_CONNECTION" | awk '{print $1}')"
-        # Check if the route to the SSH client goes through eth0
-        if ip route get "$ssh_client_ip" 2>/dev/null | grep -q 'dev eth0'; then
+        local server_ip
+        server_ip="$(echo "$SSH_CONNECTION" | awk '{print $3}')"
+        # Check if eth0 owns this IP
+        if ip -4 addr show eth0 2>/dev/null | grep -q "inet ${server_ip}/"; then
             return 0
         fi
     fi
