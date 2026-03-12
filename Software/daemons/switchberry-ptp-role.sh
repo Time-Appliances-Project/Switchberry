@@ -28,6 +28,12 @@ case "${ROLE}" in
         systemctl start ts2phc-switchberry.service || true
         systemctl start ptp4l-switchberry-gm.service || true
 
+        # System clock sync (PHC -> CLOCK_REALTIME)
+        systemctl start switchberry-phc2sys.service || true
+
+        # NTP server (chrony with PHC refclock, GM+GPS only)
+        systemctl start switchberry-chrony.service || true
+
         # Optional cleanup: stop client stack if running
         systemctl stop ptp4l-switchberry-client.service 2>/dev/null || true
 	systemctl stop switchberry-cm4-pps-monitor.service || true
@@ -36,13 +42,17 @@ case "${ROLE}" in
     CLIENT)
         echo "[switchberry-ptp-role] Configuring as CLIENT"
 
-        # Start client stack (you’ll define these separately)
+        # Start client stack (you'll define these separately)
         systemctl start ptp4l-switchberry-client.service || true
 	systemctl start switchberry-cm4-pps-monitor.service || true
+
+        # System clock sync (PHC -> CLOCK_REALTIME)
+        systemctl start switchberry-phc2sys.service || true
 
         # Optional cleanup: stop GM stack if running
         systemctl stop ts2phc-switchberry.service 2>/dev/null || true
         systemctl stop ptp4l-switchberry-gm.service 2>/dev/null || true
+        systemctl stop switchberry-chrony.service 2>/dev/null || true
         ;;
 
     NONE|""|*)
@@ -52,6 +62,8 @@ case "${ROLE}" in
 	systemctl stop switchberry-cm4-pps-monitor.service || true
         systemctl stop ptp4l-switchberry-gm.service 2>/dev/null || true
         systemctl stop ptp4l-switchberry-client.service 2>/dev/null || true
+        systemctl stop switchberry-phc2sys.service 2>/dev/null || true
+        systemctl stop switchberry-chrony.service 2>/dev/null || true
         ;;
 esac
 

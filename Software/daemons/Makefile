@@ -37,7 +37,9 @@ SERVICE_FILES := \
     switchberry-cm4-pps-monitor.service \
     gpspipe-socat.service \
     switchberry-status-web.service \
-    switchberry-dhcp-watchdog.service
+    switchberry-dhcp-watchdog.service \
+    switchberry-phc2sys.service \
+    switchberry-chrony.service
 
 # Helper scripts in this directory that should go into /usr/local/sbin
 SCRIPT_FILES := \
@@ -47,13 +49,16 @@ SCRIPT_FILES := \
     ptp4l_gm_guard.sh \
     switchberry_cm4_pps_monitor.sh \
     switchberry-ptp-role.sh \
-    switchberry-dhcp-watchdog.sh
+    switchberry-dhcp-watchdog.sh \
+    switchberry_phc2sys_guard.sh \
+    switchberry_chrony_guard.sh
 
 # Timing/PTP config files that should go into /etc/switchberry
 CONF_FILES := \
     ts2phc-switchberry.conf \
     ptp4l-switchberry-gm.conf \
-    ptp4l-switchberry-client.conf
+    ptp4l-switchberry-client.conf \
+    chrony-switchberry.conf
 
 # GPSD default config template in this directory (optional)
 GPSD_CONF_SRC := switchberry-gpsd.conf
@@ -95,7 +100,9 @@ SERVICES_PTP := \
     ts2phc-switchberry.service \
     ptp4l-switchberry-gm.service \
     ptp4l-switchberry-client.service \
-    switchberry-cm4-pps-monitor.service
+    switchberry-cm4-pps-monitor.service \
+    switchberry-phc2sys.service \
+    switchberry-chrony.service
 
 # Everything we might want to stop/status (safe even if not running)
 SERVICES_ALL := $(SERVICES_PTP) $(SERVICES_ROLE_ORCH) $(SERVICES_GNSS) $(SERVICES_CORE)

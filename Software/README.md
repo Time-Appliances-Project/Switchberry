@@ -84,6 +84,23 @@ For users debugging schematics or low-level GPIO code, here is the mapping betwe
 | **SMA3** | SMA2 |
 | **SMA4** | SMA1 |
 
+### NTP Server (GM+GPS only)
+
+When configured as a **PTP Grandmaster with GPS**, Switchberry automatically serves **NTP** using [chrony](https://chrony-project.org/) with the CM4 Ethernet NIC PHC (`/dev/ptp0`) as a Stratum 1 refclock. The PHC is disciplined by `ts2phc` from GPS.
+
+- **Guard script** (`switchberry_chrony_guard.sh`): Only starts `chronyd` once `ts2phc` has converged. If GPS is lost or the DPLL goes unstable, chrony is stopped so stale time is never served. It restarts automatically when GPS recovers.
+- **Config:** `/etc/switchberry/chrony-switchberry.conf`
+- **Dependency:** `chrony` must be installed (`sudo apt install chrony`). The stock `chronyd.service` is automatically stopped to avoid port conflicts.
+- NTP is **not served** in CLIENT or NONE modes.
+
+### System Clock Sync (GM+GPS and CLIENT)
+
+The system clock (`CLOCK_REALTIME`) is automatically synced from the PHC via `phc2sys` in both **GM+GPS** and **CLIENT** modes:
+
+- **GM+GPS:** `phc2sys` starts when `ts2phc` converges (PHC has GPS time).
+- **CLIENT:** `phc2sys` starts when `ptp4l` is locked (servo `s2`, tight offsets).
+- **Guard script** (`switchberry_phc2sys_guard.sh`): Stops `phc2sys` when the upstream time source is lost, restarts when recovered.
+
 ---
 
 ## Quick start: customize your timing/PTP setup

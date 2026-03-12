@@ -1,0 +1,14 @@
+# /usr/lib/systemd/system/switchberry-phc2sys.service
+[Unit]
+Description=Switchberry phc2sys system clock sync (PHC -> CLOCK_REALTIME)
+After=switchberry-dpll-monitor.service
+Wants=switchberry-dpll-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/switchberry_phc2sys_guard.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

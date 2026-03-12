@@ -41,6 +41,9 @@ SERVICES=(
     "switchberry-dpll-monitor.service"
     "switchberry-ptp-role.service"
     "ts2phc-switchberry.service"
+    "switchberry-phc2sys.service"
+    "switchberry-chrony.service"
+    "switchberry-dhcp-watchdog.service"
     "switchberry-status-web.service"
 )
 

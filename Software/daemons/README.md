@@ -55,9 +55,20 @@ sequenceDiagram
    - **Grandmaster (GM):**
      - `ts2phc-switchberry.service` — disciplines the CM4 Ethernet PHC from the timing chain
      - `ptp4l-switchberry-gm.service` — runs ptp4l as a GM
+     - `switchberry-phc2sys.service` — syncs system clock from PHC (gated on ts2phc convergence)
+     - `switchberry-chrony.service` — serves NTP using PHC refclock (gated on ts2phc convergence, GM+GPS only)
    - **Client:**
      - `ptp4l-switchberry-client.service` — runs ptp4l as a client (often unicast; user supplies GM IP in config)
 	 - `switchberry-cm4-pps-monitor.service` — ensures PPS output from CM4 only when ptp4l is running and locked
+     - `switchberry-phc2sys.service` — syncs system clock from PHC (gated on ptp4l lock quality)
+
+7. **System clock and NTP features**
+    - **phc2sys guard** (`switchberry_phc2sys_guard.sh`): Supervises `phc2sys` to copy PHC → `CLOCK_REALTIME`.
+      In GM mode, gates on ts2phc status. In CLIENT mode, gates on ptp4l being locked (s2 + tight offsets).
+      Stops phc2sys when upstream is lost, restarts when recovered.
+    - **chrony guard** (`switchberry_chrony_guard.sh`): Supervises `chronyd` with a PHC refclock config.
+      Only runs in GM+GPS mode. Gates on ts2phc convergence (PHC has GPS-accurate time).
+      Stops chrony when GPS/DPLL is lost so stale time is never served.
 
 ---
 
