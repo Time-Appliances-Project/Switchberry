@@ -45,7 +45,7 @@ SERVICES = [
     "switchberry-status-web.service",
 ]
 
-LOG_LINES = 5  # Number of journal lines per service
+LOG_LINES = 10  # Number of journal lines per service
 COMBINED_LOG_LINES = 30  # Number of lines in the combined log view
 
 
