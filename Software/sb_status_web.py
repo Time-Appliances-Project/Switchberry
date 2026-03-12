@@ -166,6 +166,30 @@ def get_sma_config():
         return []
 
 
+STATUS_FILES = {
+    "ts2phc": "/tmp/switchberry-ts2phc.status",
+    "phc2sys": "/tmp/switchberry-phc2sys.status",
+    "chrony (NTP)": "/tmp/switchberry-chrony.status",
+}
+
+def get_timesync_status():
+    """Read guard-script status files for ts2phc, phc2sys, and chrony."""
+    results = []
+    for label, path in STATUS_FILES.items():
+        try:
+            with open(path) as f:
+                lines = f.read().strip().split("\n")
+            state = lines[0] if len(lines) > 0 else "UNKNOWN"
+            ts = lines[1] if len(lines) > 1 else ""
+            detail = lines[2] if len(lines) > 2 else ""
+            results.append((label, state, ts, detail))
+        except FileNotFoundError:
+            results.append((label, "NOT_RUNNING", "", "status file not found"))
+        except Exception:
+            results.append((label, "UNKNOWN", "", ""))
+    return results
+
+
 def get_service_status():
     """Get status and recent log lines of all monitored services.
        Returns (active_list, inactive_list) where each item is (svc, status, logs)."""
@@ -278,6 +302,7 @@ def build_html():
     dpll = get_dpll_status()
     ptp = get_ptp_status()
     smas = get_sma_config()
+    timesync = get_timesync_status()
     combined_logs = get_combined_logs()
 
     # Active service rows with log tails
@@ -305,6 +330,13 @@ def build_html():
     dpll_rows = ""
     for label, state, combo in dpll:
         dpll_rows += f'<tr><td>{esc(label)}</td><td>{esc(state)}</td><td>{esc(combo)}</td></tr>\n'
+
+    # Time sync rows (ts2phc, phc2sys, chrony)
+    timesync_rows = ""
+    for label, state, ts, detail in timesync:
+        color = "#4caf50" if state == "OK" else "#f44336" if state == "NOT_OK" else "#666"
+        dot = "🟢" if state == "OK" else "🔴" if state == "NOT_OK" else "⚫"
+        timesync_rows += f'<tr><td>{dot} {esc(label)}</td><td style="color:{color}">{esc(state)}</td><td>{esc(detail)}</td></tr>\n'
 
     # PTP info — role-aware display
     ptp_role = ptp.get("role", "NONE")
@@ -446,6 +478,14 @@ def build_html():
     <div class="card">
         <h2>PTP Status</h2>
         {ptp_block}
+    </div>
+
+    <div class="card">
+        <h2>Time Sync &amp; NTP</h2>
+        <table>
+            <tr><th>Component</th><th>Status</th><th>Detail</th></tr>
+            {timesync_rows}
+        </table>
     </div>
 
     <div class="card">
