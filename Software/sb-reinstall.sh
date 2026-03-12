@@ -14,11 +14,32 @@ SOFTWARE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="/tmp/sb-reinstall.log"
 LOCK_FILE="/tmp/sb-reinstall.lock"
 
-# ── Optional: run in background to survive SSH disconnects ──
-# Use --background flag if SSH'd through the Ethernet switch (DPLL reset drops link).
-# Default: run directly in the foreground.
+# ── Auto-detect SSH over eth0 and run in background ──
+# If the user is SSH'd through the Ethernet switch, the DPLL reset will break
+# the link and kill the SSH session. Detect this and auto-switch to background.
+ssh_over_eth0() {
+    # Check if we're in an SSH session with a connection routed through eth0
+    if [[ -n "${SSH_CONNECTION:-}" ]]; then
+        local ssh_client_ip
+        ssh_client_ip="$(echo "$SSH_CONNECTION" | awk '{print $1}')"
+        # Check if the route to the SSH client goes through eth0
+        if ip route get "$ssh_client_ip" 2>/dev/null | grep -q 'dev eth0'; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+BACKGROUND=0
 if [[ "${1:-}" == "--background" ]]; then
+    BACKGROUND=1
     shift
+elif ssh_over_eth0; then
+    echo "Detected SSH connection over eth0 — switching to background mode automatically."
+    BACKGROUND=1
+fi
+
+if [[ "$BACKGROUND" -eq 1 ]]; then
     # Clean up stale log file (may be owned by root from a previous run)
     sudo rm -f "$LOG_FILE"
     touch "$LOG_FILE"
