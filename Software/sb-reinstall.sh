@@ -90,6 +90,7 @@ sudo journalctl --rotate
 for svc in switchberry-sanity switchberry-apply-timing switchberry-apply-network \
            switchberry-full-init switchberry-dpll-monitor switchberry-ptp-role \
            switchberry-status-web switchberry-cm4-pps-monitor \
+           switchberry-phc2sys switchberry-chrony switchberry-dhcp-watchdog \
            ts2phc-switchberry ptp4l-switchberry-gm ptp4l-switchberry-client; do
     sudo journalctl --vacuum-time=1s -u "${svc}.service" 2>/dev/null || true
 done

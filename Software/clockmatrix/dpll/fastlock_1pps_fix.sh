@@ -112,7 +112,7 @@ set -euo pipefail
 
 # ----------------------------- Configuration ----------------------------------
 
-POLL_SEC=0.2
+POLL_SEC=1
 STARTUP_AGGRESSIVE_SEC=60
 
 FREQ_CH=5
