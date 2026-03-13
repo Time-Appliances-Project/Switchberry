@@ -105,3 +105,40 @@ make logs S=switchberry-ptp-role.service
 
 # Uninstall everything
 sudo make uninstall 
+
+```
+
+---
+
+## Testing NTP
+
+When Switchberry is running as a **GM with GPS**, it serves NTP on the standard port (UDP 123).
+To verify from another device on the same network:
+
+### Linux
+```bash
+# One-shot query (shows offset, delay, stratum)
+ntpdate -q <switchberry-ip>
+
+# If ntpdate is not installed:
+sudo apt install ntpdate
+```
+
+### macOS
+```bash
+# Built-in sntp utility
+sntp <switchberry-ip>
+```
+
+### Windows (PowerShell)
+```powershell
+# Built-in w32tm utility
+w32tm /stripchart /computer:<switchberry-ip> /samples:3
+```
+
+### Expected output
+- **Stratum 1** — direct GPS/PHC hardware reference
+- **Offset** near zero (a few milliseconds is normal over Ethernet)
+
+> **Note:** `chrony` must be installed on the Switchberry image (`sudo apt install chrony`).
+> The stock `chronyd.service` is automatically disabled by `sb-reinstall.sh` to avoid port conflicts.

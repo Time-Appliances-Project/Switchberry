@@ -103,12 +103,17 @@ else
 fi
 
 # 2. Stop Services
-echo "[2/7] Stopping services..."
+echo "[2/8] Stopping services..."
 if [[ -d "$SOFTWARE_DIR/daemons" ]]; then
     (cd "$SOFTWARE_DIR/daemons" && sudo make stop) || echo "Warning: 'make stop' returned error (ignoring)."
 else
     echo "Warning: daemons directory not found."
 fi
+
+# 2b. Disable stock chrony (conflicts with switchberry-chrony)
+echo "     Disabling stock chronyd (if present)..."
+sudo systemctl disable --now chronyd.service 2>/dev/null || true
+sudo systemctl disable --now chrony.service 2>/dev/null || true
 
 # 3. Flush journal logs for Switchberry services
 # Clears old log entries so the web dashboard only shows logs from this install.

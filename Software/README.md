@@ -86,12 +86,40 @@ For users debugging schematics or low-level GPIO code, here is the mapping betwe
 
 ### NTP Server (GM+GPS only)
 
-When configured as a **PTP Grandmaster with GPS**, Switchberry automatically serves **NTP** using [chrony](https://chrony-project.org/) with the CM4 Ethernet NIC PHC (`/dev/ptp0`) as a Stratum 1 refclock. The PHC is disciplined by `ts2phc` from GPS.
+When configured as a **PTP Grandmaster with GPS**, Switchberry automatically serves **NTP** (Stratum 1) to the local network. The full time chain is:
+
+```
+GPS → DPLL → ts2phc → PHC (TAI) → phc2sys (-O -37) → System Clock (UTC) → chrony → NTP
+```
 
 - **Guard script** (`switchberry_chrony_guard.sh`): Only starts `chronyd` once `ts2phc` has converged. If GPS is lost or the DPLL goes unstable, chrony is stopped so stale time is never served. It restarts automatically when GPS recovers.
 - **Config:** `/etc/switchberry/chrony-switchberry.conf`
-- **Dependency:** `chrony` must be installed (`sudo apt install chrony`). The stock `chronyd.service` is automatically stopped to avoid port conflicts.
 - NTP is **not served** in CLIENT or NONE modes.
+
+> **Dependency:** `chrony` must be installed: `sudo apt install chrony`.
+> The stock `chronyd.service` is automatically disabled by `sb-reinstall.sh` to prevent port 123 conflicts.
+
+#### Testing NTP from another device
+
+From any device on the same network as the Switchberry:
+
+**Linux:**
+```bash
+ntpdate -q <switchberry-ip>
+# Install if missing: sudo apt install ntpdate
+```
+
+**macOS:**
+```bash
+sntp <switchberry-ip>
+```
+
+**Windows (PowerShell):**
+```powershell
+w32tm /stripchart /computer:<switchberry-ip> /samples:3
+```
+
+You should see **Stratum 1** and an offset near zero (a few ms is normal over Ethernet).
 
 ### System Clock Sync (GM+GPS and CLIENT)
 
@@ -100,6 +128,7 @@ The system clock (`CLOCK_REALTIME`) is automatically synced from the PHC via `ph
 - **GM+GPS:** `phc2sys` starts when `ts2phc` converges (PHC has GPS time).
 - **CLIENT:** `phc2sys` starts when `ptp4l` is locked (servo `s2`, tight offsets).
 - **Guard script** (`switchberry_phc2sys_guard.sh`): Stops `phc2sys` when the upstream time source is lost, restarts when recovered.
+- **TAI→UTC:** `phc2sys` runs with `-O -37` to convert from the PHC's TAI time to the system clock's UTC.
 
 ---
 
