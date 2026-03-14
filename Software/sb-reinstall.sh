@@ -128,17 +128,10 @@ echo "     Disabling stock chronyd (if present)..."
 sudo systemctl disable --now chronyd.service 2>/dev/null || true
 sudo systemctl disable --now chrony.service 2>/dev/null || true
 
-# 3. Flush journal logs for Switchberry services
-# Clears old log entries so the web dashboard only shows logs from this install.
-echo "[3/7] Flushing Switchberry service logs..."
-sudo journalctl --rotate
-for svc in switchberry-sanity switchberry-apply-timing switchberry-apply-network \
-           switchberry-full-init switchberry-dpll-monitor switchberry-ptp-role \
-           switchberry-status-web switchberry-cm4-pps-monitor \
-           switchberry-phc2sys switchberry-chrony switchberry-dhcp-watchdog \
-           ts2phc-switchberry ptp4l-switchberry-gm ptp4l-switchberry-client; do
-    sudo journalctl --vacuum-time=1s -u "${svc}.service" 2>/dev/null || true
-done
+# 3. Record install timestamp
+# The web dashboard uses this to filter journal entries — only shows logs after this point.
+echo "[3/8] Recording install timestamp..."
+date -Is > /tmp/switchberry-install.timestamp
 
 # 4. Install All
 echo "[4/7] Building and Installing software..."
