@@ -294,7 +294,8 @@ def get_combined_logs():
 
 def get_system_summary(config, dpll, ptp, timesync):
     """Generate a human-readable system status summary from collected data."""
-    lines = []
+    config_lines = []
+    status_lines = []
     issues = []
 
     # --- PTP Role ---
@@ -303,13 +304,13 @@ def get_system_summary(config, dpll, ptp, timesync):
     gps_role = config.get("gps_role", "None") if isinstance(config, dict) else "None"
 
     if ptp_role == "GM" and gps_present and gps_role not in ("None", None):
-        lines.append("\U0001f4e1 <b>PTP Grandmaster</b> with GPS reference")
+        config_lines.append("\U0001f4e1 <b>PTP Grandmaster</b> with GPS reference")
     elif ptp_role == "GM":
-        lines.append("\U0001f4e1 <b>PTP Grandmaster</b> (no GPS)")
+        config_lines.append("\U0001f4e1 <b>PTP Grandmaster</b> (no GPS)")
     elif ptp_role == "CLIENT":
-        lines.append("\U0001f4e1 <b>PTP Client</b> — syncing from network master")
+        config_lines.append("\U0001f4e1 <b>PTP Client</b> \u2014 syncing from network master")
     else:
-        lines.append("\u26a0\ufe0f <b>PTP not configured</b> (role=NONE)")
+        config_lines.append("\u26a0\ufe0f <b>PTP not configured</b> (role=NONE)")
 
     # --- DPLL State ---
     dpll_locked = False
@@ -322,13 +323,13 @@ def get_system_summary(config, dpll, ptp, timesync):
             dpll_freerun = True
 
     if dpll_locked:
-        lines.append("\u2705 DPLL is <b>locked</b> to a reference")
+        status_lines.append("\u2705 DPLL is <b>locked</b> to a reference")
     elif dpll_freerun:
-        lines.append("\U0001f7e1 DPLL is in <b>freerun</b> — no external reference")
+        status_lines.append("\U0001f7e1 DPLL is in <b>freerun</b> — no external reference")
         issues.append("DPLL has no reference")
     else:
         dpll_states = ", ".join(s for _, s, _ in dpll)
-        lines.append(f"\u26a0\ufe0f DPLL state: <b>{esc(dpll_states)}</b>")
+        status_lines.append(f"\u26a0\ufe0f DPLL state: <b>{esc(dpll_states)}</b>")
 
     # --- Time sync chain ---
     ts_status = {}  # label -> (state, detail)
@@ -341,18 +342,18 @@ def get_system_summary(config, dpll, ptp, timesync):
 
     if ptp_role == "GM":
         if ts2phc_state == "OK":
-            lines.append("\u2705 ts2phc: PHC is <b>synced from GPS</b>")
+            status_lines.append("\u2705 ts2phc: PHC is <b>synced from GPS</b>")
         elif ts2phc_state == "NOT_OK":
             detail = ts_status.get("ts2phc", ("", ""))[1]
-            lines.append(f"\U0001f534 ts2phc: <b>not converged</b> — {esc(detail)}")
+            status_lines.append(f"\U0001f534 ts2phc: <b>not converged</b> — {esc(detail)}")
             issues.append("ts2phc not converged")
         elif ts2phc_state != "NOT_RUNNING":
-            lines.append(f"\u26a0\ufe0f ts2phc: {esc(ts2phc_state)}")
+            status_lines.append(f"\u26a0\ufe0f ts2phc: {esc(ts2phc_state)}")
 
     if phc2sys_state == "OK":
-        lines.append("\u2705 System clock is <b>synced from PHC</b>")
+        status_lines.append("\u2705 System clock is <b>synced from PHC</b>")
     elif phc2sys_state == "NOT_OK":
-        lines.append("\U0001f534 System clock is <b>not synced</b> from PHC")
+        status_lines.append("\U0001f534 System clock is <b>not synced</b> from PHC")
         issues.append("System clock not synced")
     elif phc2sys_state != "NOT_RUNNING":
         pass  # Don't clutter with unknown states
@@ -360,25 +361,25 @@ def get_system_summary(config, dpll, ptp, timesync):
     # -- NTP serving --
     if ptp_role == "GM":
         if chrony_state == "OK":
-            lines.append("\u2705 <b>NTP server</b> is active (Stratum 1)")
+            status_lines.append("\u2705 <b>NTP server</b> is active (Stratum 1)")
         elif chrony_state == "NOT_OK":
-            lines.append("\U0001f534 NTP server is <b>not ready</b>")
+            status_lines.append("\U0001f534 NTP server is <b>not ready</b>")
             issues.append("NTP not serving")
         elif chrony_state == "NOT_RUNNING":
-            lines.append("\u26a0\ufe0f NTP server is <b>not running</b>")
+            status_lines.append("\u26a0\ufe0f NTP server is <b>not running</b>")
 
     # --- PTP port state ---
     port_state = ptp.get("port_state", "")
     if port_state:
         if port_state == "MASTER":
-            lines.append("\u2705 PTP port state: <b>MASTER</b>")
+            status_lines.append("\u2705 PTP port: <b>MASTER</b>")
         elif port_state == "SLAVE":
             offset = ptp.get("master_offset", "?")
-            lines.append(f"\u2705 PTP port state: <b>SLAVE</b> (offset: {esc(str(offset))} ns)")
+            status_lines.append(f"\u2705 PTP port: <b>SLAVE</b> (offset: {esc(str(offset))} ns)")
         elif port_state == "LISTENING":
-            lines.append("\U0001f7e1 PTP port state: <b>LISTENING</b> (waiting for sync)")
+            status_lines.append("\U0001f7e1 PTP port: <b>LISTENING</b> (waiting for sync)")
         else:
-            lines.append(f"\u26a0\ufe0f PTP port state: <b>{esc(port_state)}</b>")
+            status_lines.append(f"\u26a0\ufe0f PTP port: <b>{esc(port_state)}</b>")
 
     # --- Overall verdict ---
     if not issues:
@@ -393,7 +394,7 @@ def get_system_summary(config, dpll, ptp, timesync):
     else:
         overall = f"\u26a0\ufe0f {len(issues)} issues: {', '.join(issues)}"
 
-    return overall, lines
+    return overall, config_lines, status_lines
 
 def build_html():
     """Build the complete status HTML page."""
@@ -406,7 +407,7 @@ def build_html():
     smas = get_sma_config()
     timesync = get_timesync_status()
     combined_logs = get_combined_logs()
-    overall_status, summary_lines = get_system_summary(config, dpll, ptp, timesync)
+    overall_status, config_lines, status_lines = get_system_summary(config, dpll, ptp, timesync)
 
     # Active service rows with log tails
     active_svc_rows = ""
@@ -568,7 +569,8 @@ def build_html():
         <h2>System Summary</h2>
         <div class="summary">
             <div class="summary-overall">{overall_status}</div>
-            <div class="summary-detail">{'<br>'.join(summary_lines)}</div>
+            <div class="summary-detail"><b style="color:#7b8cde">Config:</b><br>{'<br>'.join(config_lines)}</div>
+            <div class="summary-detail" style="margin-top:6px"><b style="color:#7b8cde">Live Status:</b><br>{'<br>'.join(status_lines)}</div>
         </div>
     </div>
 
