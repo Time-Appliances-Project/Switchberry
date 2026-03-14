@@ -421,10 +421,10 @@ def build_html():
         .identity {{ display: flex; gap: 30px; flex-wrap: wrap; }}
         .identity span {{ color: #aaa; font-size: 0.85em; }}
         .identity strong {{ color: #e0e0e0; }}
-        .refresh {{ color: #555; font-size: 0.75em; margin-top: 10px; display: flex; align-items: center; gap: 8px; }}
+        .refresh {{ color: #888; font-size: 0.9em; display: flex; align-items: center; gap: 8px; margin-bottom: 15px; }}
         .refresh select {{
             background: #16213e; color: #7b8cde; border: 1px solid #333;
-            border-radius: 4px; padding: 2px 6px; font-size: 0.75em;
+            border-radius: 4px; padding: 4px 8px; font-size: 0.9em;
             cursor: pointer;
         }}
         pre.logs {{
@@ -445,6 +445,17 @@ def build_html():
 <body>
     <h1>🍓 Switchberry</h1>
     <p class="subtitle">Timing Appliance Status Dashboard</p>
+    <p class="refresh">
+        Auto-refresh:
+        <select id="refreshRate" onchange="setRefresh(this.value)">
+            <option value="1">1s</option>
+            <option value="2">2s</option>
+            <option value="5" selected>5s</option>
+            <option value="10">10s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+        </select>
+    </p>
 
     <div class="card">
         <h2>System Identity</h2>
@@ -498,17 +509,6 @@ def build_html():
         <pre class="combined-logs">{esc(combined_logs)}</pre>
     </div>
 
-    <p class="refresh">
-        Auto-refresh:
-        <select id="refreshRate" onchange="setRefresh(this.value)">
-            <option value="1">1s</option>
-            <option value="2">2s</option>
-            <option value="5" selected>5s</option>
-            <option value="10">10s</option>
-            <option value="30">30s</option>
-            <option value="60">60s</option>
-        </select>
-    </p>
     <script>
         function setRefresh(sec) {{
             localStorage.setItem('sb_refresh', sec);
