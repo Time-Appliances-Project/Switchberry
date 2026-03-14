@@ -90,16 +90,29 @@ find "$SOFTWARE_DIR" -name '*.sh' -exec chmod +x {} +
 find "$SOFTWARE_DIR" -name '*.py' -exec chmod +x {} +
 git -C "$SOFTWARE_DIR" config core.fileMode false 2>/dev/null || true
 
-# 1. Reset DPLL
-# 0xc012 = DPLL_MODE register. 0x5a = Trigger EEPROM Reload / Reset
+# 1. Program DPLL from TCS file
+# Uses dplltool --prog-file to load the repo-controlled TCS programming file
+# directly via SPI. This is more future-proof than EEPROM reload — if you need
+# to change a DPLL setting, just edit the TCS file instead of reflashing EEPROM.
 # WARNING: This disrupts the KSZ9567 clock tree and will break Ethernet.
+#
+# Old method (EEPROM reload, for reference):
+#   $DPLLTOOL --write 0xc012 0x5a
+#   (0xc012 = DPLL_MODE register, 0x5a = Trigger EEPROM Reload / Reset)
+DPLL_TCS="$(dirname "$SOFTWARE_DIR")/DPLL/switchberry_dpll_default.txt"
 if [[ -x "$DPLLTOOL" ]]; then
-    echo "[1/7] Resetting DPLL configuration..."
-    "$DPLLTOOL" --write 0xc012 0x5a
-    echo "DPLL reset command sent."
+    echo "[1/8] Programming DPLL from TCS file..."
+    if [[ -f "$DPLL_TCS" ]]; then
+        "$DPLLTOOL" --prog-file "$DPLL_TCS"
+        echo "DPLL programmed from $(basename "$DPLL_TCS")."
+    else
+        echo "Warning: TCS file not found at $DPLL_TCS, falling back to EEPROM reload."
+        "$DPLLTOOL" --write 0xc012 0x5a
+        echo "DPLL reset via EEPROM reload."
+    fi
     sleep 1
 else
-    echo "[1/7] Warning: dplltool not found at $DPLLTOOL. Skipping DPLL reset."
+    echo "[1/8] Warning: dplltool not found at $DPLLTOOL. Skipping DPLL programming."
 fi
 
 # 2. Stop Services

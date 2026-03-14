@@ -394,7 +394,7 @@ def build_html():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="1">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Switchberry Status — {hostname}</title>
     <style>
@@ -421,7 +421,12 @@ def build_html():
         .identity {{ display: flex; gap: 30px; flex-wrap: wrap; }}
         .identity span {{ color: #aaa; font-size: 0.85em; }}
         .identity strong {{ color: #e0e0e0; }}
-        .refresh {{ color: #555; font-size: 0.75em; margin-top: 10px; }}
+        .refresh {{ color: #555; font-size: 0.75em; margin-top: 10px; display: flex; align-items: center; gap: 8px; }}
+        .refresh select {{
+            background: #16213e; color: #7b8cde; border: 1px solid #333;
+            border-radius: 4px; padding: 2px 6px; font-size: 0.75em;
+            cursor: pointer;
+        }}
         pre.logs {{
             background: #0d1b2a; color: #8892b0; padding: 8px; margin: 4px 0;
             border-radius: 4px; font-size: 0.75em; line-height: 1.4;
@@ -493,7 +498,30 @@ def build_html():
         <pre class="combined-logs">{esc(combined_logs)}</pre>
     </div>
 
-    <p class="refresh">Auto-refreshes every 1 second</p>
+    <p class="refresh">
+        Auto-refresh:
+        <select id="refreshRate" onchange="setRefresh(this.value)">
+            <option value="1">1s</option>
+            <option value="2">2s</option>
+            <option value="5" selected>5s</option>
+            <option value="10">10s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+        </select>
+    </p>
+    <script>
+        function setRefresh(sec) {{
+            localStorage.setItem('sb_refresh', sec);
+            clearTimeout(window._refreshTimer);
+            window._refreshTimer = setTimeout(function() {{ location.reload(); }}, sec * 1000);
+        }}
+        (function() {{
+            var saved = localStorage.getItem('sb_refresh') || '5';
+            var sel = document.getElementById('refreshRate');
+            sel.value = saved;
+            setRefresh(saved);
+        }})();
+    </script>
 </body>
 </html>"""
     return page
@@ -520,7 +548,7 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
 def run_https_server(port, cert_file):
     """Run an HTTPS server on a separate port using a self-signed cert."""
     try:
-        server = http.server.HTTPServer(("0.0.0.0", port), StatusHandler)
+        server = http.server.ThreadingHTTPServer(("0.0.0.0", port), StatusHandler)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert_file)
         server.socket = ctx.wrap_socket(server.socket, server_side=True)
@@ -546,7 +574,7 @@ def main():
             t.start()
 
     # Start HTTP (main thread)
-    server = http.server.HTTPServer(("0.0.0.0", args.port), StatusHandler)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", args.port), StatusHandler)
     print(f"HTTP server running on port {args.port}")
     try:
         server.serve_forever()

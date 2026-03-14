@@ -258,7 +258,7 @@ static void usage(const char *prog) {
       "  %s --spidev /dev/spidev2.1 --write 0xCBE4 0x50\n"
       "  %s --flash-hex SwitchberryV5_8a34004_eeprom.hex\n"
       "  %s --tcs-apply SwitchberryV5_8a34004_live.tcs --tcs-debug\n"
-      "  %s --prog-file Test_FromScratch_Programming_11-26-2025.txt "
+      "  %s --prog-file switchberry_dpll_default.txt "
       "--tcs-debug\n"
       "  %s set-input-freq 1 25000000\n",
       prog, prog, prog, prog, prog, prog);
