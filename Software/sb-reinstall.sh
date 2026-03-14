@@ -128,10 +128,13 @@ echo "     Disabling stock chronyd (if present)..."
 sudo systemctl disable --now chronyd.service 2>/dev/null || true
 sudo systemctl disable --now chrony.service 2>/dev/null || true
 
-# 3. Record install timestamp
-# The web dashboard uses this to filter journal entries — only shows logs after this point.
-echo "[3/8] Recording install timestamp..."
-date -Is > /tmp/switchberry-install.timestamp
+# 3. Clear journal logs
+# Rotate moves current entries to archived files, sleep 2 ensures they're old enough,
+# then vacuum removes all archived journals older than 1 second.
+echo "[3/8] Clearing journal logs..."
+sudo journalctl --rotate
+sleep 2
+sudo journalctl --vacuum-time=1s 2>/dev/null || true
 
 # 4. Install All
 echo "[4/7] Building and Installing software..."

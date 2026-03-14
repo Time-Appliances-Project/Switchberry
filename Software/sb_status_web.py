@@ -47,20 +47,6 @@ SERVICES = [
 
 LOG_LINES = 10  # Number of journal lines per service
 COMBINED_LOG_LINES = 30  # Number of lines in the combined log view
-INSTALL_TIMESTAMP_FILE = "/tmp/switchberry-install.timestamp"
-
-
-def get_install_since():
-    """Return ['--since', '<timestamp>'] if install timestamp exists, else []."""
-    try:
-        if os.path.isfile(INSTALL_TIMESTAMP_FILE):
-            with open(INSTALL_TIMESTAMP_FILE) as f:
-                ts = f.read().strip()
-            if ts:
-                return ["--since", ts]
-    except Exception:
-        pass
-    return []
 
 
 def run_cmd(cmd, timeout=5):
@@ -214,7 +200,7 @@ def get_service_status():
         logs = ""
         if status == "active":
             logs = run_cmd(["journalctl", "-u", svc, "-n", str(LOG_LINES),
-                            "--no-pager", "--output=short"] + get_install_since())
+                            "--no-pager", "--output=short"])
             active.append((svc, status, logs))
         else:
             inactive.append((svc, status, logs))
@@ -301,7 +287,7 @@ def get_combined_logs():
     """Get combined recent logs from all active Switchberry services."""
     # Build a journalctl command that queries all services at once
     cmd = ["journalctl", "--no-pager", "--output=short",
-           "-n", str(COMBINED_LOG_LINES), "--reverse"] + get_install_since()
+           "-n", str(COMBINED_LOG_LINES), "--reverse"]
     for svc in SERVICES:
         cmd.extend(["-u", svc])
     return run_cmd(cmd, timeout=5)

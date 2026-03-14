@@ -253,11 +253,25 @@ fi
 
 write_status "$PHC2SYS_STATUS_FILE" "NOT_OK" "INIT"
 
+UPSTREAM_STABLE_COUNT="${UPSTREAM_STABLE_COUNT:-3}"
+
 while true; do
-  # Wait for upstream to be OK
+  # Wait for upstream to be stably OK (multiple consecutive checks)
+  stable_count=0
   while true; do
     (( stop_requested )) && exit 0
-    upstream_ok && break
+    if upstream_ok; then
+      stable_count=$(( stable_count + 1 ))
+      if (( stable_count >= UPSTREAM_STABLE_COUNT )); then
+        log "Upstream stable for $UPSTREAM_STABLE_COUNT checks"
+        break
+      fi
+    else
+      if (( stable_count > 0 )); then
+        log "Upstream flapped after $stable_count/$UPSTREAM_STABLE_COUNT checks, resetting"
+      fi
+      stable_count=0
+    fi
     sleep "$POLL_SEC"
   done
 
