@@ -61,6 +61,19 @@ dpll_ok() {
   [[ "$(read_first_line "$DPLL_STATUS_FILE")" == "OK" ]]
 }
 
+dpll_locked() {
+  # Check that the DPLL is not only OK (not intervening) but also has a
+  # valid lock.  Line 3 of the status file contains a hint like:
+  #   "LOCKED FREQ(CH5)=LOCKED CH6=LOCKED"
+  #   "NO_REF FREQ(CH5)=FREERUN CH6=FREERUN"
+  #   "UNLOCKED FREQ(CH5)=... CH6=..."
+  # We require "LOCKED" to appear, meaning at least one channel is locked.
+  if [[ ! -f "$DPLL_STATUS_FILE" ]]; then return 1; fi
+  local line3
+  line3="$(sed -n '3p' "$DPLL_STATUS_FILE" 2>/dev/null || echo "")"
+  [[ "$line3" == *LOCKED* ]]
+}
+
 # Process bookkeeping
 ts2phc_pgid=0
 fifo=""
@@ -190,8 +203,12 @@ stop_ts2phc() {
 }
 
 wait_for_dpll_ok() {
+  log "Waiting for DPLL OK + LOCKED..."
   while true; do
-    dpll_ok && return 0
+    if dpll_ok && dpll_locked; then
+      log "DPLL is OK and LOCKED"
+      return 0
+    fi
     sleep "$POLL_SEC"
   done
 }
@@ -208,7 +225,8 @@ while true; do
   while true; do
     (( stop_requested )) && exit 0
 
-    if ! dpll_ok; then
+    if ! dpll_ok || ! dpll_locked; then
+      log "DPLL no longer OK+LOCKED — stopping ts2phc"
       stop_ts2phc
       break
     fi
