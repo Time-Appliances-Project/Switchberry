@@ -285,13 +285,115 @@ def get_ptp_status():
 
 def get_combined_logs():
     """Get combined recent logs from all active Switchberry services."""
-    # Build a journalctl command that queries all services at once
     cmd = ["journalctl", "--no-pager", "--output=short",
            "-n", str(COMBINED_LOG_LINES), "--reverse"]
     for svc in SERVICES:
         cmd.extend(["-u", svc])
     return run_cmd(cmd, timeout=5)
 
+
+def get_system_summary(config, dpll, ptp, timesync):
+    """Generate a human-readable system status summary from collected data."""
+    lines = []
+    issues = []
+
+    # --- PTP Role ---
+    ptp_role = config.get("ptp_role", "NONE") if isinstance(config, dict) else "NONE"
+    gps_present = config.get("gps_present", False) if isinstance(config, dict) else False
+    gps_role = config.get("gps_role", "None") if isinstance(config, dict) else "None"
+
+    if ptp_role == "GM" and gps_present and gps_role not in ("None", None):
+        lines.append("\U0001f4e1 <b>PTP Grandmaster</b> with GPS reference")
+    elif ptp_role == "GM":
+        lines.append("\U0001f4e1 <b>PTP Grandmaster</b> (no GPS)")
+    elif ptp_role == "CLIENT":
+        lines.append("\U0001f4e1 <b>PTP Client</b> — syncing from network master")
+    else:
+        lines.append("\u26a0\ufe0f <b>PTP not configured</b> (role=NONE)")
+
+    # --- DPLL State ---
+    dpll_locked = False
+    dpll_freerun = False
+    for label, state, combo in dpll:
+        state_lower = state.lower() if state else ""
+        if "locked" in state_lower or "lock_acq" in state_lower:
+            dpll_locked = True
+        if "freerun" in state_lower:
+            dpll_freerun = True
+
+    if dpll_locked:
+        lines.append("\u2705 DPLL is <b>locked</b> to a reference")
+    elif dpll_freerun:
+        lines.append("\U0001f7e1 DPLL is in <b>freerun</b> — no external reference")
+        issues.append("DPLL has no reference")
+    else:
+        dpll_states = ", ".join(s for _, s, _ in dpll)
+        lines.append(f"\u26a0\ufe0f DPLL state: <b>{esc(dpll_states)}</b>")
+
+    # --- Time sync chain ---
+    ts_status = {}  # label -> (state, detail)
+    for label, state, ts, detail in timesync:
+        ts_status[label] = (state, detail)
+
+    ts2phc_state = ts_status.get("ts2phc", ("UNKNOWN", ""))[0]
+    phc2sys_state = ts_status.get("phc2sys", ("UNKNOWN", ""))[0]
+    chrony_state = ts_status.get("chrony (NTP)", ("UNKNOWN", ""))[0]
+
+    if ptp_role == "GM":
+        if ts2phc_state == "OK":
+            lines.append("\u2705 ts2phc: PHC is <b>synced from GPS</b>")
+        elif ts2phc_state == "NOT_OK":
+            detail = ts_status.get("ts2phc", ("", ""))[1]
+            lines.append(f"\U0001f534 ts2phc: <b>not converged</b> — {esc(detail)}")
+            issues.append("ts2phc not converged")
+        elif ts2phc_state != "NOT_RUNNING":
+            lines.append(f"\u26a0\ufe0f ts2phc: {esc(ts2phc_state)}")
+
+    if phc2sys_state == "OK":
+        lines.append("\u2705 System clock is <b>synced from PHC</b>")
+    elif phc2sys_state == "NOT_OK":
+        lines.append("\U0001f534 System clock is <b>not synced</b> from PHC")
+        issues.append("System clock not synced")
+    elif phc2sys_state != "NOT_RUNNING":
+        pass  # Don't clutter with unknown states
+
+    # -- NTP serving --
+    if ptp_role == "GM":
+        if chrony_state == "OK":
+            lines.append("\u2705 <b>NTP server</b> is active (Stratum 1)")
+        elif chrony_state == "NOT_OK":
+            lines.append("\U0001f534 NTP server is <b>not ready</b>")
+            issues.append("NTP not serving")
+        elif chrony_state == "NOT_RUNNING":
+            lines.append("\u26a0\ufe0f NTP server is <b>not running</b>")
+
+    # --- PTP port state ---
+    port_state = ptp.get("port_state", "")
+    if port_state:
+        if port_state == "MASTER":
+            lines.append("\u2705 PTP port state: <b>MASTER</b>")
+        elif port_state == "SLAVE":
+            offset = ptp.get("master_offset", "?")
+            lines.append(f"\u2705 PTP port state: <b>SLAVE</b> (offset: {esc(str(offset))} ns)")
+        elif port_state == "LISTENING":
+            lines.append("\U0001f7e1 PTP port state: <b>LISTENING</b> (waiting for sync)")
+        else:
+            lines.append(f"\u26a0\ufe0f PTP port state: <b>{esc(port_state)}</b>")
+
+    # --- Overall verdict ---
+    if not issues:
+        if dpll_freerun and ptp_role == "NONE":
+            overall = "\U0001f7e1 System is running in <b>standalone mode</b> (no PTP, no GPS)"
+        elif dpll_freerun:
+            overall = "\U0001f7e1 Waiting for DPLL lock..."
+        else:
+            overall = "\u2705 All systems <b>nominal</b>"
+    elif len(issues) == 1:
+        overall = f"\u26a0\ufe0f Issue: {issues[0]}"
+    else:
+        overall = f"\u26a0\ufe0f {len(issues)} issues: {', '.join(issues)}"
+
+    return overall, lines
 
 def build_html():
     """Build the complete status HTML page."""
@@ -304,6 +406,7 @@ def build_html():
     smas = get_sma_config()
     timesync = get_timesync_status()
     combined_logs = get_combined_logs()
+    overall_status, summary_lines = get_system_summary(config, dpll, ptp, timesync)
 
     # Active service rows with log tails
     active_svc_rows = ""
@@ -427,6 +530,10 @@ def build_html():
             border-radius: 4px; padding: 4px 8px; font-size: 0.9em;
             cursor: pointer;
         }}
+        .summary {{ font-size: 0.95em; line-height: 1.7; }}
+        .summary-overall {{ font-size: 1.1em; font-weight: bold; margin-bottom: 8px;
+            padding: 8px 12px; background: #0d1b2a; border-radius: 6px; }}
+        .summary-detail {{ padding-left: 8px; }}
         pre.logs {{
             background: #0d1b2a; color: #8892b0; padding: 8px; margin: 4px 0;
             border-radius: 4px; font-size: 0.75em; line-height: 1.4;
@@ -456,6 +563,14 @@ def build_html():
             <option value="60">60s</option>
         </select>
     </p>
+
+    <div class="card">
+        <h2>System Summary</h2>
+        <div class="summary">
+            <div class="summary-overall">{overall_status}</div>
+            <div class="summary-detail">{'<br>'.join(summary_lines)}</div>
+        </div>
+    </div>
 
     <div class="card">
         <h2>System Identity</h2>
