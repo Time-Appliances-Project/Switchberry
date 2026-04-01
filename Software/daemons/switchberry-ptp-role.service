@@ -1,0 +1,14 @@
+# /lib/systemd/system/switchberry-ptp-role.service
+
+[Unit]
+Description=Switchberry PTP role decider (GM vs CLIENT)
+After=apply_timing.service
+Wants=apply_timing.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/switchberry-ptp-role.sh
+
+[Install]
+WantedBy=multi-user.target
+

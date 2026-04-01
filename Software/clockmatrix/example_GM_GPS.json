@@ -1,0 +1,47 @@
+{
+  "ptp_role": "GM",
+  "gps": {
+    "present": true,
+    "role": "TIME_ONLY",
+    "priority": 1
+  },
+  "cm4": {
+    "used_as_source": false,
+    "role": null,
+    "priority": null
+  },
+  "synce": {
+    "used_as_source": false,
+    "priority": null
+  },
+  "smas": [
+    {
+      "name": "SMA1",
+      "direction": "INPUT",
+      "role": "FREQ_ONLY",
+      "priority": 1,
+      "frequency_hz": null
+    },
+    {
+      "name": "SMA2",
+      "direction": "OUTPUT",
+      "role": null,
+      "priority": null,
+      "frequency_hz": 1
+    },
+    {
+      "name": "SMA3",
+      "direction": "OUTPUT",
+      "role": null,
+      "priority": null,
+      "frequency_hz": 10000000
+    },
+    {
+      "name": "SMA4",
+      "direction": "INPUT",
+      "role": "FREQ_ONLY",
+      "priority": 2,
+      "frequency_hz": null
+    }
+  ]
+}

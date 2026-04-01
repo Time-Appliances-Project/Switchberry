@@ -1,0 +1,14 @@
+# /usr/lib/systemd/system/switchberry-dhcp-watchdog.service
+[Unit]
+Description=Switchberry DHCP watchdog for eth0
+After=switchberry-apply-network.service NetworkManager.service
+Wants=switchberry-apply-network.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /usr/local/sbin/switchberry-dhcp-watchdog.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

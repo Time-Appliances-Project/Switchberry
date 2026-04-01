@@ -1,0 +1,23 @@
+[Unit]
+Description=Switchberry CM4 NIC PPS output monitor (enable only when ptp4l client locked s2)
+After=network-online.target
+Wants=network-online.target
+
+# We *monitor* the client service. It may not always be running; that's OK.
+After=ptp4l-switchberry-client.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/switchberry_cm4_pps_monitor.sh
+Restart=always
+RestartSec=2
+
+# Optional overrides:
+# Environment=PTP_DEVICE=/dev/ptp0
+# Environment=CLIENT_UNIT=ptp4l-switchberry-client.service
+# Environment=LOCK_STABLE_COUNT=3
+# Environment=REQUIRE_PMC_SLAVE=1
+
+[Install]
+WantedBy=multi-user.target
+

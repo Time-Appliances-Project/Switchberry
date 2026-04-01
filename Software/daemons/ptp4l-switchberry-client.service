@@ -1,0 +1,30 @@
+# /lib/systemd/system/ptp4l-switchberry-client.service
+[Unit]
+Description=ptp4l PTP Client (unicast) for Switchberry
+#After=network-online.target
+#Wants=network-online.target
+
+# If you have your ClockMatrix monitor running and want the client to only run
+# when the DPLL is stable (recommended if you feed PPS/SyncE into other services),
+# uncomment these:
+After=switchberry-dpll-monitor.service
+Wants=switchberry-dpll-monitor.service
+
+[Service]
+Type=simple
+
+# Your client config (edit the UDPv4 in the config file to point to your GM)
+ExecStart=/usr/sbin/ptp4l -f /etc/switchberry/ptp4l-switchberry-client.conf -m
+
+# Restart on failures / link hiccups
+Restart=always
+RestartSec=2
+
+# Hardening / niceties (optional)
+Nice=-10
+LimitRTPRIO=98
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
+

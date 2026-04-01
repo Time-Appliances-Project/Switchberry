@@ -1,0 +1,18 @@
+# /usr/lib/systemd/system/switchberry-apply-network.service
+[Unit]
+Description=Switchberry apply eth0 network configuration at boot
+Requires=switchberry-sanity.service
+After=switchberry-sanity.service
+Before=network-online.target
+
+[Service]
+Type=oneshot
+
+# Apply eth0 DHCP/Static config from the Switchberry JSON config
+ExecStart=/usr/bin/python3 /usr/local/sbin/apply_network.py -c /etc/startup-dpll.json
+
+# Keep service "active" after it runs successfully (useful for dependencies)
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

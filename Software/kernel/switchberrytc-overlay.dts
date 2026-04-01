@@ -1,0 +1,113 @@
+/*
+ * Universal device tree overlay for SPI devices
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+/ {
+	compatible = "brcm,bcm2835";
+
+
+	fragment@0 { // ksz9031 rgmii phy between ksz9567 and CM4
+		target-path = "/";
+		__overlay__ {
+			mdio0: mdio {
+				compatible = "virtual,mdio-gpio";
+				// MDC = cm4 pin 54 gpio4 , MDIO = cm4 pin 50 gpio 17
+				gpios = <&gpio 4 0>, <&gpio 17 0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				phy1: ethernet-phy@0 {
+					compatible = "ethernet-phy-ieee802.3-c22";
+					reg = <2>;
+					//reset-gpios = <&gpio 24 GPIO_ACTIVE_LOW>; // brd_rst_n cm4 pin 45 gpio 24	
+				};
+			};
+		};
+	};
+
+
+	   fragment@1 {
+			target-path = "/";
+			__overlay__ {
+				    i2c_muxsel: i2c@9 {
+					reg = <9>;
+					compatible = "i2c-gpio";
+					gpios = <&gpio 27 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN) /* SDA */
+						 &gpio 22 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN) /* SCL */>;
+					i2c-gpio,delay-us = <2>;        /* ~100 kHz */
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+						tca6424: gpio@23 {
+							compatible = "ti,tca6424";
+							reg = <0x23>;
+							gpio-controller;
+							#gpio-cells = <2>;
+							status = "okay";
+							gpio-line-names = "SMA1_MUX_SEL0" , "SMA1_MUX_SEL1", 
+								"SMA2_MUX_SEL0", "SMA2_MUX_SEL1", 
+								"SMA3_MUX_SEL0", "SMA3_MUX_SEL1",
+								"M2_MUX_SEL0", "M2_MUX_SEL1",
+								"KSZ_MUX_SEL0", "KSZ_MUX_SEL1",
+								"CM4_MUX_SEL0",	"CM4_MUX_SEL1",
+								"DPLL_CLK0P_SEL", "DPLL_CLK1P_SEL",
+								"DPLL_CLK0N_SEL", "DPLL_CLK1N_SEL",
+								"DPLL_Q9P_SEL", "DPLL_Q10P_SEL";
+						};
+				    };
+				};
+		};
+
+
+
+	fragment@2 {
+		target = <&gpio>;
+		__overlay__ {
+			spi_bitbang_pins: spi_bitbang_pins {
+				brcm,pins = <2 3 44 45>;      /* MISO SCK MOSI CS0 */
+				brcm,function = <0 0 0 0>;    /* plain GPIO (not ALT) */
+				brcm,pull = <0 0 0 0>;        /* no pulls */
+			};
+		};
+	};
+
+
+	fragment@3 {
+		target-path = "/";
+		__overlay__ {
+			spi_bitbang: spi_bitbang {
+				compatible = "spi-gpio";
+				pinctrl-names = "default";
+				pinctrl-0 = <&spi_bitbang_pins>;
+				status = "okay";
+
+				/* sck-gpios  = <&gpio GPIO SCK_FLAGS>;   */
+				/* mosi-gpios = <&gpio GPIO MOSI_FLAGS>;  */
+				/* miso-gpios = <&gpio GPIO MISO_FLAGS>;  */
+				/* cs-gpios   = <&gpio GPIO CS_FLAGS>;    */
+				sck-gpios  = <&gpio 3 0>;
+				mosi-gpios = <&gpio 44 0>;
+				miso-gpios = <&gpio 2 0>;
+				cs-gpios   = <&gpio 45 1>;   /* 1 = active-low CS */
+
+				num-chipselects = <1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				spidev@0 {
+					compatible = "spidev";
+					reg = <0>;                     /* CS0 */
+					spi-max-frequency = <1000000>; /* 1 MHz bit-bang */
+					status = "okay";
+				};
+			};
+		};
+	};
+
+
+
+};

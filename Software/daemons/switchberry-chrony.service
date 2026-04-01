@@ -1,0 +1,16 @@
+# /usr/lib/systemd/system/switchberry-chrony.service
+[Unit]
+Description=Switchberry NTP server (chrony with PHC refclock, GM+GPS only)
+After=switchberry-dpll-monitor.service
+Wants=switchberry-dpll-monitor.service
+# Prevent stock chrony from running alongside
+Conflicts=chronyd.service chrony.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/switchberry_chrony_guard.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

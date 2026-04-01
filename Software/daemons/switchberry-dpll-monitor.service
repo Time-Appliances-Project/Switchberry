@@ -1,0 +1,20 @@
+# /etc/systemd/system/switchberry-dpll-monitor.service
+[Unit]
+Description=Switchberry ClockMatrix DPLL monitor / relock workaround
+After=switchberry-full-init.service
+Wants=switchberry-full-init.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/fastlock_1pps_fix.sh
+
+# Keep it running
+Restart=always
+RestartSec=1
+
+# Nice-to-have limits (optional)
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target
+
